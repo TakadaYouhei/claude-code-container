@@ -1,5 +1,5 @@
 # claude-code-container
-claude code を実行するためのコンテナ艦橋
+Claude Code を実行するためのコンテナ艦橋
 
 ## ドキュメント
 
