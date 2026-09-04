@@ -1,0 +1,14 @@
+# Podman（rootless）利用時に docker-compose.yml へ重ねて適用する override。
+# SELinux ラベル（:Z）付きボリュームマウントなど、Docker との差異のみを定義する。
+# 対応要件: 4.8, 5.1, 5.4（docs/design.md 4章・9章）
+services:
+  claude-code:
+    volumes:
+      - claude-config:/home/dev/.claude:Z
+      - workspace:/workspace:Z
+      - dotfiles:/home/dev/.dotfiles:Z
+
+volumes:
+  claude-config:
+  workspace:
+  dotfiles:
