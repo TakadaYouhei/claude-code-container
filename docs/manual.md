@@ -47,38 +47,34 @@ cd claude-code-container
 
 以下の項目が OK / NG で表示される。
 
-- 選択したコンテナエンジン（Docker または Podman）がインストール済みで、動作要件を満たすバージョンか
-- `docker compose` / `podman-compose` 等の compose ツールが利用可能か
-- `git` など必須コマンドが PATH 上に存在するか
-- ディスク空き容量・メモリが最低要件を満たしているか
-- Anthropic API / claude.ai への到達性があるか
+- 選択したコンテナエンジン（Docker または Podman）がインストール済みで、動作要件を満たすバージョンか（必須）
+- `docker compose` / `podman-compose` 等の compose ツールが利用可能か（必須）
+- `git` など必須コマンドが PATH 上に存在するか（必須）
+- ディスク空き容量が最低要件を満たしているか（必須）
+- メモリが推奨要件を満たしているか（任意・NG でも警告表示のみでセットアップは続行できる）
+- Anthropic API / claude.ai への到達性があるか（必須）
 
-**NG があった場合**は、表示される原因と対処方法（インストール手順・設定変更方法）に従って
-ホスト環境を修正し、再度 `./scripts/check-env.sh` を実行すること。すべて OK になるまで
-次のステップ（コンテナ起動）へは進めない。
+**必須項目で NG があった場合**は、表示される原因と対処方法（インストール手順・設定変更方法）に
+従ってホスト環境を修正し、再度 `./scripts/check-env.sh` を実行すること。必須項目がすべて OK に
+なるまで次のステップ（コンテナ起動）へは進めない。メモリの NG は警告のみのため、内容を確認した
+うえでそのまま先へ進んでもよい。
 
 ### 3.3 コンテナエンジンの選択と起動
 
-Docker と Podman のどちらを使うかを、環境変数または起動スクリプトの引数で指定する。
-未指定の場合は Docker がデフォルトとして使用される。
-
-**Docker を使う場合:**
-
-```bash
-docker compose up -d
-```
-
-**Podman を使う場合（rootless 実行）:**
+Docker と Podman のどちらを使うかは、`.env` の `CONTAINER_ENGINE`（`docker` または `podman`。
+未指定時は `docker`）で指定する。起動は Docker / Podman いずれの場合も `scripts/up.sh` 経由で
+行う。`docker compose` / `podman-compose` を直接叩く必要はない。
 
 ```bash
-podman-compose up -d
-# または
-podman compose up -d
+./scripts/up.sh
 ```
 
-> Podman を使う場合、ボリュームマウント時の SELinux ラベル付与（`:Z`/`:z`）やネットワーク
-> モードの違いは起動スクリプト側で吸収される。sudo 権限や Docker デーモンが使えないホスト
-> （会社支給端末など）でも同様の使用感で利用できる。
+> `scripts/up.sh` は `CONTAINER_ENGINE` の値を見て、Docker の場合は `docker compose up -d` を、
+> Podman の場合は `podman compose`（無ければ `podman-compose`）に加えて
+> `docker-compose.podman.yml`（SELinux ラベル `:Z`/`:z` 等の差分を定義した override）を
+> 自動的に重ねて適用する。この override ファイルの指定を利用者が手動で行う必要はない。
+> sudo 権限や Docker デーモンが使えないホスト（会社支給端末など）でも Podman を選択すれば
+> 同様の使用感で利用できる。
 
 起動後、コンテナはバックグラウンドで常駐する（`restart: unless-stopped` 相当のポリシー）。
 ホストやコンテナが予期せず再起動しても、作業内容・認証情報は失われない（詳細は 6 章）。
@@ -162,10 +158,10 @@ Claude Code との1回の会話単位（＝1タスク）を「対話セッショ
 
 ```bash
 # プロジェクト A
-docker compose -p project-a up -d
+./scripts/up.sh project-a
 
 # プロジェクト B
-docker compose -p project-b up -d
+./scripts/up.sh project-b
 ```
 
 ## 6. 再起動・復旧
@@ -173,9 +169,7 @@ docker compose -p project-b up -d
 ホストが再起動した場合でも、以下の手順で環境を復旧できる。
 
 ```bash
-docker compose up -d
-# または
-podman-compose up -d
+./scripts/up.sh
 ```
 
 自動起動が設定されていれば、Docker/Podman サービスの起動に伴いコンテナも自動的に再起動する。
@@ -186,6 +180,8 @@ podman-compose up -d
 
 ```bash
 docker compose logs -f
+# Podman の場合
+podman compose logs -f
 ```
 
 ## 7. トラブルシューティング
@@ -195,8 +191,8 @@ docker compose logs -f
 | セットアップが環境チェックで止まる | コンテナエンジン未インストール、`git` 未インストール、ネットワーク不通 等 | `./scripts/check-env.sh` の出力に従い、指示されたコマンドで不足しているソフトウェアを導入する |
 | `claude` コマンドで再ログインを求められる | 認証情報用ボリュームがマウントされていない、別ボリュームでコンテナを再作成した | ボリューム設定を確認し、認証情報ディレクトリ（`~/.claude` 等）が永続化されているか確認する |
 | `git push` が失敗する | 認証情報（PAT/SSH 鍵）の期限切れ、ブランチの競合、ネットワーク断 | エラー内容を確認し、認証情報を更新するかコンフリクトを解消したうえで再度指示を送る |
-| Podman でボリュームの権限エラーが出る | SELinux ラベルが付与されていない | ボリュームマウントオプションに `:Z` または `:z` を付与する（起動スクリプトが自動対応している場合は再セットアップを試す） |
-| ホスト再起動後にコンテナが起動しない | 自動起動が設定されていない | `docker compose up -d` / `podman-compose up -d` を手動実行する |
+| Podman でボリュームの権限エラーが出る | SELinux ラベルが付与されていない | `docker compose` などを直接使わず `./scripts/up.sh` 経由で起動する（`docker-compose.podman.yml` の override が自動適用される） |
+| ホスト再起動後にコンテナが起動しない | 自動起動が設定されていない | `./scripts/up.sh` を手動実行する |
 
 ## 8. よくある質問（FAQ）
 
