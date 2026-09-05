@@ -49,7 +49,14 @@ case "${CONTAINER_ENGINE}" in
     ;;
 esac
 
-CONTAINER_ID="$("${COMPOSE_CMD[@]}" "${PROJECT_ARGS[@]}" ps -q claude-code)"
+# podman-compose の `ps` サブコマンドは docker compose と異なり、
+# サービス名を引数として受け付けない（`-q`/`--quiet` のみ対応）ため、
+# podman 系エンジンではサービス名を渡さない。
+PS_ARGS=(ps -q)
+if [ "${CONTAINER_ENGINE}" = "docker" ]; then
+  PS_ARGS=(ps -q claude-code)
+fi
+CONTAINER_ID="$("${COMPOSE_CMD[@]}" "${PROJECT_ARGS[@]}" "${PS_ARGS[@]}" | head -n1)"
 if [ -z "${CONTAINER_ID}" ]; then
   echo "起動中のコンテナが見つかりません。先に ./scripts/up.sh を実行してください。" >&2
   exit 1
