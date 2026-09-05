@@ -52,7 +52,9 @@ claude-code-container/
 │   ├── up.sh                    # 起動スクリプト（CONTAINER_ENGINE に応じてcompose起動コマンド・overrideファイルを選択）
 │   ├── entrypoint.sh            # コンテナ常駐用エントリポイント（初回clone・権限調整）
 │   ├── session-branch.sh        # 対話セッション開始検知→ブランチ作成
-│   └── git-autocommit.sh        # 変更検知→commit/push 自動化
+│   ├── git-autocommit.sh        # 変更検知→commit/push 自動化
+│   └── lib/
+│       └── detect-engine.sh    # CONTAINER_ENGINE 未指定時のエンジン自動検出（check-env.sh/up.sh/attach.sh が共有）
 ├── docs/
 │   ├── requirements.md
 │   ├── use-cases.md
@@ -133,7 +135,9 @@ Podman のいずれの場合も本スクリプト経由での起動を基本と�
 ### 5.1 処理内容
 
 ```
-1. .env（または環境変数）から CONTAINER_ENGINE（既定 docker）を読み取る。
+1. .env（または環境変数）から CONTAINER_ENGINE を読み取る。未指定の場合は
+   scripts/lib/detect-engine.sh がインストール済みのエンジンを見て docker/podman を自動選択する
+   （既定 docker、docker が無く podman のみあれば podman）。
 2. CONTAINER_ENGINE=docker の場合:
      docker compose [-p <project>] up -d
 3. CONTAINER_ENGINE=podman の場合:
@@ -234,8 +238,13 @@ Podman のいずれの場合も本スクリプト経由での起動を基本と�
 | デーモンの有無 | dockerd（root権限が必要な場合あり） | デーモンレス・rootless | Podman選択時は `sudo` 不要な手順のみを案内 |
 | ネットワークモード | bridge がデフォルト | slirp4netns 等 | 明示的なポート公開が必要な場合のみ compose 側で調整 |
 
-コンテナエンジンの選択は環境変数 `CONTAINER_ENGINE=docker|podman`（未指定時 `docker`）で行い、
-`scripts/up.sh`（5章）がこの値を見て使用する compose コマンド・override ファイルを切り替える。
+コンテナエンジンの選択は環境変数 `CONTAINER_ENGINE=docker|podman` で行う。未指定時は
+`scripts/lib/detect-engine.sh` がホストに `docker` コマンドがあれば `docker` を、無く `podman`
+コマンドのみがあれば `podman` を自動選択する（両方無い場合は従来通り `docker`）。これにより
+Podman のみをインストールしたホストで `CONTAINER_ENGINE` の明示指定を忘れても
+`scripts/check-env.sh` が Docker 不在を理由に NG にすることを防ぐ。`scripts/up.sh`（5章）・
+`scripts/check-env.sh`（6章）・`scripts/attach.sh` はいずれもこの共通ロジックで確定した値を見て
+使用する compose コマンド・override ファイルを切り替える。
 
 対応要件: 4.8, 5.1, 5.4
 

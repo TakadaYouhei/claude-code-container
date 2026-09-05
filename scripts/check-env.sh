@@ -20,7 +20,9 @@ if [ -f "${ROOT_DIR}/.env" ]; then
   set +a
 fi
 
-CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
+# shellcheck source=scripts/lib/detect-engine.sh
+source "${SCRIPT_DIR}/lib/detect-engine.sh"
+CONTAINER_ENGINE="$(detect_container_engine "${CONTAINER_ENGINE:-}")"
 MIN_DISK_GB="${MIN_DISK_GB:-10}"
 RECOMMENDED_MEM_GB="${RECOMMENDED_MEM_GB:-4}"
 CHECK_TARGET_DIR="${ROOT_DIR}"

@@ -18,7 +18,9 @@ if [ -f "${ROOT_DIR}/.env" ]; then
   set +a
 fi
 
-CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
+# shellcheck source=scripts/lib/detect-engine.sh
+source "${SCRIPT_DIR}/lib/detect-engine.sh"
+CONTAINER_ENGINE="$(detect_container_engine "${CONTAINER_ENGINE:-}")"
 
 echo "=== 環境チェックを実行します (CONTAINER_ENGINE=${CONTAINER_ENGINE}) ==="
 if ! "${SCRIPT_DIR}/check-env.sh"; then
