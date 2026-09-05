@@ -92,7 +92,7 @@ if ! tmux has-session -t work 2>/dev/null; then
 fi
 
 echo "[entrypoint] 起動処理が完了しました。コンテナを常駐させます。"
-echo "[entrypoint] アタッチ例: docker exec -it <コンテナ名> tmux attach -t work"
+echo "[entrypoint] アタッチ例: ./scripts/attach.sh"
 
 # フォアグラウンドプロセスとして待受状態を維持し、コンテナを常駐させる
 exec tail -f /dev/null
