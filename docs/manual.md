@@ -137,8 +137,14 @@ SSH でホストに接続したうえで、コンテナ内シェルにアタッ�
 
 ```bash
 ssh <ホスト>
-docker exec -it <コンテナ名> tmux attach || docker exec -it <コンテナ名> tmux new -s work
+./scripts/attach.sh
 ```
+
+`scripts/attach.sh` は `CONTAINER_ENGINE` の値に応じてコンテナを特定し、
+`docker exec -it <コンテナ名> tmux attach -t work || docker exec -it <コンテナ名> tmux new -s work`
+に相当する処理を行う（毎回コンテナ名を打ち込む必要がない）。`up.sh` と同様に、
+複数プロジェクトを起動している場合は引数でプロジェクト名を指定できる
+（`./scripts/attach.sh <プロジェクト名>`）。
 
 作業を中断する場合は `tmux` セッションをデタッチ（`Ctrl-b d`）したまま SSH 接続を切断してよい。
 コンテナはバックグラウンドで稼働を継続し、次回接続時に同じ `tmux` セッションへ再アタッチできる。
