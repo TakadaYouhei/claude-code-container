@@ -62,5 +62,17 @@ if [ -z "${CONTAINER_ID}" ]; then
   exit 1
 fi
 
-exec "${CONTAINER_ENGINE}" exec -it "${CONTAINER_ID}" tmux attach -t work \
-  || exec "${CONTAINER_ENGINE}" exec -it "${CONTAINER_ID}" tmux new -s work
+# entrypoint.sh はコンテナ内で root から dev ユーザーへ su してから tmux
+# セッションを作成する。tmux のソケットは UID ごとに分かれる（/tmp/tmux-<uid>/）ため、
+# ここで -u dev を指定せずに exec すると（コンテナの既定ユーザーである root として
+# 実行され）dev のセッションが見えず「no sessions」と表示されてしまう。
+# 必ず dev ユーザーとして exec する。
+#
+# また `exec A || exec B` は A の起動（execve）自体が失敗した場合のみ B を実行する
+# ため、A（tmux attach）が「起動はできたがセッションが無く終了コード非0で終わる」
+# ケースでは B（tmux new）にフォールバックできない。判定と exec を分離する。
+if "${CONTAINER_ENGINE}" exec -u dev "${CONTAINER_ID}" tmux has-session -t work 2>/dev/null; then
+  exec "${CONTAINER_ENGINE}" exec -it -u dev "${CONTAINER_ID}" tmux attach -t work
+else
+  exec "${CONTAINER_ENGINE}" exec -it -u dev "${CONTAINER_ID}" tmux new -s work
+fi
