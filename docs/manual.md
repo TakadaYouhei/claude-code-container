@@ -53,7 +53,7 @@ cp .env.example .env
 | --- | --- | --- |
 | `GIT_REPO_URL` | 必須 | 初回起動時に自動 clone する対象リポジトリの URL |
 | `GIT_BASE_BRANCH` | 任意（既定 `main`） | セッション用ブランチの作成元となるベースブランチ |
-| `CONTAINER_ENGINE` | 任意（既定 `docker`） | 使用するコンテナエンジン（`docker` または `podman`） |
+| `CONTAINER_ENGINE` | 任意（既定は自動検出） | 使用するコンテナエンジン（`docker` または `podman`）。未指定の場合、`docker` コマンドがあれば `docker`、無く `podman` コマンドのみがあれば `podman` を自動的に選択する（両方無い場合は `docker`） |
 | `ANTHROPIC_API_KEY` | 任意 | API キー認証を使う場合に設定する（未設定時は OAuth ログインを想定） |
 | `CLAUDE_AUTO_APPROVE` | 任意（既定 `true`） | 自動承認モード（4.2）の有効/無効 |
 
@@ -84,9 +84,11 @@ cp .env.example .env
 
 ### 3.4 コンテナエンジンの選択と起動
 
-Docker と Podman のどちらを使うかは、`.env` の `CONTAINER_ENGINE`（`docker` または `podman`。
-未指定時は `docker`）で指定する。起動は Docker / Podman いずれの場合も `scripts/up.sh` 経由で
-行う。`docker compose` / `podman-compose` を直接叩く必要はない。
+Docker と Podman のどちらを使うかは、`.env` の `CONTAINER_ENGINE`（`docker` または `podman`）で
+指定する。未指定の場合は、ホストに `docker` コマンドがあれば Docker を、無く `podman` コマンドの
+みが存在すれば Podman を自動的に選択する（Podman のみをインストールしたホストで明示指定を忘れて
+も NG にならない）。起動は Docker / Podman いずれの場合も `scripts/up.sh` 経由で行う。
+`docker compose` / `podman-compose` を直接叩く必要はない。
 
 ```bash
 ./scripts/up.sh
