@@ -65,11 +65,20 @@ if [ ! -f "${REPO_MARKER}" ]; then
     REPO_PATH="${WORKSPACE_DIR}/${REPO_NAME}"
     if [ -d "${REPO_PATH}/.git" ]; then
       echo "[entrypoint] ${REPO_PATH} は既に clone 済みのため、clone をスキップします。"
+      echo "${REPO_NAME}" > "${REPO_MARKER}"
     else
       echo "[entrypoint] 対象リポジトリを clone します: ${GIT_REPO_URL} -> ${REPO_PATH}"
-      git clone "${GIT_REPO_URL}" "${REPO_PATH}"
+      # clone に失敗しても（SSH known_hosts 未設定・認証情報未設定など）
+      # set -e でコンテナごと落として再起動ループさせない。
+      # アタッチして原因を直せるよう、マーカーは書かずに起動処理を継続し、
+      # 次回起動時に再度 clone を試みられるようにする。
+      if git clone "${GIT_REPO_URL}" "${REPO_PATH}"; then
+        echo "${REPO_NAME}" > "${REPO_MARKER}"
+      else
+        echo "[entrypoint] リポジトリの clone に失敗しました。コンテナにアタッチし、SSH鍵/known_hosts 等を確認したうえで手動で clone してください。" >&2
+        rm -rf "${REPO_PATH}"
+      fi
     fi
-    echo "${REPO_NAME}" > "${REPO_MARKER}"
   else
     echo "[entrypoint] GIT_REPO_URL が未設定のため、自動 clone をスキップしました。"
     echo "[entrypoint] .env に GIT_REPO_URL を設定し、コンテナを再作成してください。"
