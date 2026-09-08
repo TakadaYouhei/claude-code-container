@@ -54,8 +54,12 @@ case "${CONTAINER_ENGINE}" in
       echo "podman compose / podman-compose が見つかりません。./scripts/check-env.sh を実施済みか確認してください。" >&2
       exit 1
     fi
+    # podman-compose は docker compose と異なり、イメージを再ビルドしても
+    # 実行中のコンテナを自動では再作成しない（設定/イメージの変更検知が弱い）ため、
+    # --force-recreate を付けて明示的に作り直す。付けないと、
+    # ./scripts/up.sh でイメージを直しても古いコンテナが動き続けてしまう。
     echo "=== ${COMPOSE_CMD[*]} でコンテナを起動します（docker-compose.podman.yml を自動適用） ==="
-    "${COMPOSE_CMD[@]}" -f docker-compose.yml -f docker-compose.podman.yml "${PROJECT_ARGS[@]}" up -d --build
+    "${COMPOSE_CMD[@]}" -f docker-compose.yml -f docker-compose.podman.yml "${PROJECT_ARGS[@]}" up -d --build --force-recreate
     ;;
   *)
     echo "CONTAINER_ENGINE: '${CONTAINER_ENGINE}' は未対応の値です。docker または podman を指定してください。" >&2
