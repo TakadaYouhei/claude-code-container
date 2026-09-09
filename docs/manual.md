@@ -224,6 +224,7 @@ podman compose logs -f
 | `git push` が失敗する | 認証情報（PAT/SSH 鍵）の期限切れ、ブランチの競合、ネットワーク断 | エラー内容を確認し、認証情報を更新するかコンフリクトを解消したうえで再度指示を送る |
 | Podman でボリュームの権限エラーが出る | SELinux ラベルが付与されていない | `docker compose` などを直接使わず `./scripts/up.sh` 経由で起動する（`docker-compose.podman.yml` の override が自動適用される） |
 | ホスト再起動後にコンテナが起動しない | 自動起動が設定されていない | `./scripts/up.sh` を手動実行する |
+| `claude` 起動時に npm の permission エラーが出る（自動更新に失敗する） | Claude Code CLI はイメージビルド時に root で `npm install -g` しており、実行時は非root（`dev`）ユーザーのため npm のグローバルディレクトリへ書き込めず、自動更新に失敗する | 想定内の挙動（要件定義書 4.2 参照）。デフォルト設定（`~/.claude/settings.json`）で `DISABLE_AUTOUPDATER=1` を設定済みのため自動更新は無効。バージョンを上げたい場合は `Dockerfile` の `CLAUDE_CODE_VERSION` を指定してイメージを再ビルドする |
 
 ## 8. よくある質問（FAQ）
 
