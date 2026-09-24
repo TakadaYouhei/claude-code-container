@@ -153,7 +153,23 @@ check_disk_space() {
   fi
 }
 
-# 5. メモリ（任意・警告のみ）
+# 5. git ユーザー情報（任意・警告のみ）
+check_git_identity() {
+  if ! command -v git >/dev/null 2>&1; then
+    return
+  fi
+  local git_name git_email
+  git_name="$(git config --get user.name 2>/dev/null || true)"
+  git_email="$(git config --get user.email 2>/dev/null || true)"
+  if [ -n "${git_name}" ] && [ -n "${git_email}" ]; then
+    ok "git user.name/user.email: ${git_name} <${git_email}>"
+  else
+    warn "git user.name/user.email: 未設定です" \
+         "'git config --global user.name \"<名前>\"' と 'git config --global user.email \"<メールアドレス>\"' を実行してください。"
+  fi
+}
+
+# 6. メモリ（任意・警告のみ）
 check_memory() {
   local mem_kb mem_gb
   if [ -r /proc/meminfo ]; then
@@ -170,7 +186,7 @@ check_memory() {
   fi
 }
 
-# 6. ネットワーク到達性
+# 7. ネットワーク到達性
 check_network() {
   if ! command -v curl >/dev/null 2>&1; then
     ng "network reachability: curl が見つかりません" "curl をインストールしてから再実行してください。"
@@ -190,6 +206,7 @@ check_engine
 check_compose
 check_required_commands
 check_disk_space
+check_git_identity
 check_memory
 check_network
 echo "==================================================================="
