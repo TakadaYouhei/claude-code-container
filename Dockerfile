@@ -34,15 +34,25 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Claude Code CLI 本体（CLAUDE_CODE_VERSION でバージョン固定 or 最新版取得を選択可能）
-RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
-    && npm cache clean --force
-
 # 非rootの実行ユーザー（ホストとUID/GIDを合わせられるようARGで調整可）
 RUN groupadd -g "${CONTAINER_GID}" dev \
     && useradd -m -u "${CONTAINER_UID}" -g "${CONTAINER_GID}" -s /bin/bash dev \
-    && mkdir -p "${WORKSPACE}" /home/dev/.claude /home/dev/.dotfiles \
+    && mkdir -p "${WORKSPACE}" /home/dev/.claude /home/dev/.dotfiles /home/dev/.npm-global \
     && chown -R dev:dev "${WORKSPACE}" /home/dev
+
+# npm のグローバルインストール先を dev ユーザーのホーム配下にする。
+# Claude Code の自動アップデートは実行ユーザー（dev）権限で `npm install -g` を行うため、
+# root 所有の /usr/lib/node_modules ではなく dev が書き込める場所へ入れておく必要がある。
+ENV NPM_CONFIG_PREFIX=/home/dev/.npm-global \
+    PATH=/home/dev/.npm-global/bin:${PATH}
+
+# Claude Code CLI 本体（CLAUDE_CODE_VERSION でバージョン固定 or 最新版取得を選択可能）
+# sudo/root を使わず dev ユーザーとしてインストールする（自動アップデートを可能にするため）。
+USER dev
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+    && npm cache clean --force
+# entrypoint.sh は root で起動してボリュームの所有者を調整するため、以降は root に戻す
+USER root
 
 # 初回起動時に ~/.claude/settings.json へ複製するデフォルトフック設定
 COPY --chown=dev:dev config/claude-settings.default.json /opt/claude-container/claude-settings.default.json
