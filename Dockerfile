@@ -34,6 +34,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
+# ビルド環境: C/C++ ツールチェーン、git-lfs/subversion、cmake/ninja、X11/Wayland/EGL/D-Bus 開発ヘッダ
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential git-lfs subversion cmake ninja-build \
+        libx11-dev libxxf86vm-dev libxcursor-dev libxi-dev libxrandr-dev \
+        libxinerama-dev libegl-dev libwayland-dev wayland-protocols \
+        libxkbcommon-dev libdbus-1-dev linux-libc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # 非rootの実行ユーザー（ホストとUID/GIDを合わせられるようARGで調整可）
 RUN groupadd -g "${CONTAINER_GID}" dev \
     && useradd -m -u "${CONTAINER_UID}" -g "${CONTAINER_GID}" -s /bin/bash dev \
