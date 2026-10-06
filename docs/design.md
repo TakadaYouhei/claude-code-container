@@ -50,6 +50,7 @@ claude-code-container/
 ├── scripts/
 │   ├── check-env.sh            # セットアップ前環境チェック
 │   ├── up.sh                    # 起動スクリプト（CONTAINER_ENGINE に応じてcompose起動コマンド・overrideファイルを選択）
+│   ├── rebuild.sh               # コンテナ破棄→イメージのキャッシュ無し再ビルド→up.sh で再起動（ボリュームは保持）
 │   ├── entrypoint.sh            # コンテナ常駐用エントリポイント（初回clone・権限調整）
 │   ├── session-branch.sh        # 対話セッション開始検知→ブランチ作成
 │   ├── git-autocommit.sh        # 変更検知→commit/push 自動化

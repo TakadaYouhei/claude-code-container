@@ -14,6 +14,7 @@ cp .env.example .env
 ./scripts/check-env.sh   # セットアップ前環境チェック
 ./scripts/up.sh          # コンテナ起動（CONTAINER_ENGINE に応じて docker/podman を自動選択）
 ./scripts/attach.sh      # コンテナ内の tmux セッションにアタッチ（無ければ新規作成）
+./scripts/rebuild.sh     # コンテナを破棄してイメージを再ビルド・再起動（ボリュームは保持）
 # コンテナ内で: claude login
 ```
 
