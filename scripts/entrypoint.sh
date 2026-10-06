@@ -58,6 +58,23 @@ if [ -f "${DEFAULT_SETTINGS}" ] && [ ! -f "${CLAUDE_HOME}/settings.json" ]; then
   cp "${DEFAULT_SETTINGS}" "${CLAUDE_HOME}/settings.json"
 fi
 
+# 旧デフォルト設定が入れていた DISABLE_AUTOUPDATER=1 を一度だけ取り除く（自動アップデート有効化）。
+# 移行後に利用者が改めて設定した場合は尊重するため、マーカーファイルで一回限りにする。
+AUTOUPDATER_MARKER="${CLAUDE_HOME}/.container-autoupdater-migrated"
+if [ ! -f "${AUTOUPDATER_MARKER}" ]; then
+  if [ -f "${CLAUDE_HOME}/settings.json" ] \
+    && jq -e '.env.DISABLE_AUTOUPDATER == "1"' "${CLAUDE_HOME}/settings.json" >/dev/null 2>&1; then
+    echo "[entrypoint] settings.json の DISABLE_AUTOUPDATER を削除し、自動アップデートを有効化します..."
+    tmp_settings="$(mktemp)"
+    if jq 'del(.env.DISABLE_AUTOUPDATER) | if .env == {} then del(.env) else . end' \
+      "${CLAUDE_HOME}/settings.json" > "${tmp_settings}"; then
+      cat "${tmp_settings}" > "${CLAUDE_HOME}/settings.json"
+    fi
+    rm -f "${tmp_settings}"
+  fi
+  : > "${AUTOUPDATER_MARKER}"
+fi
+
 # 対象リポジトリの自動 clone（初回起動時のみ・マーカーファイルで判定）
 if [ ! -f "${REPO_MARKER}" ]; then
   if [ -n "${GIT_REPO_URL:-}" ]; then

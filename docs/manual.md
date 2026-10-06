@@ -210,6 +210,17 @@ Claude Code との1回の会話単位（＝1タスク）を「対話セッショ
 復旧後は 4.1 の手順で `tmux` セッションにアタッチすれば、認証情報・作業内容が保持されたまま
 作業を再開できる。
 
+### 6.1 コンテナの破棄・イメージの再ビルド
+
+`Dockerfile` の変更を反映したい場合や、Claude Code を入れ直したい場合は以下を実行する。
+
+```bash
+./scripts/rebuild.sh            # 複数プロジェクト運用時は ./scripts/rebuild.sh <プロジェクト名>
+```
+
+コンテナを破棄（`compose down`）し、イメージをキャッシュ無しで再ビルドしてから `up.sh` で起動し直す。
+ボリューム（認証情報・ワークスペース・dotfiles）は削除しないため、再ログインや再 clone は不要。
+
 コンテナのログは標準出力または永続化されたログファイルで確認できる。
 
 ```bash
@@ -227,7 +238,7 @@ podman compose logs -f
 | `git push` が失敗する | 認証情報（PAT/SSH 鍵）の期限切れ、ブランチの競合、ネットワーク断 | エラー内容を確認し、認証情報を更新するかコンフリクトを解消したうえで再度指示を送る |
 | Podman でボリュームの権限エラーが出る | SELinux ラベルが付与されていない | `docker compose` などを直接使わず `./scripts/up.sh` 経由で起動する（`docker-compose.podman.yml` の override が自動適用される） |
 | ホスト再起動後にコンテナが起動しない | 自動起動が設定されていない | `./scripts/up.sh` を手動実行する |
-| `claude` 起動時に npm の permission エラーが出る（自動更新に失敗する） | Claude Code CLI はイメージビルド時に root で `npm install -g` しており、実行時は非root（`dev`）ユーザーのため npm のグローバルディレクトリへ書き込めず、自動更新に失敗する | 想定内の挙動（要件定義書 4.2 参照）。デフォルト設定（`~/.claude/settings.json`）で `DISABLE_AUTOUPDATER=1` を設定済みのため自動更新は無効。バージョンを上げたい場合は `Dockerfile` の `CLAUDE_CODE_VERSION` を指定してイメージを再ビルドする |
+| `claude` の自動アップデートが行われない | `~/.claude/settings.json` に `DISABLE_AUTOUPDATER=1` が設定されている | 現在のイメージは Claude Code を `dev` ユーザーの npm グローバル領域（`~/.npm-global`）へ sudo 無しでインストールしているため自動アップデート可能。旧デフォルト設定由来の `DISABLE_AUTOUPDATER=1` は新イメージの初回起動時に `entrypoint.sh` が一度だけ自動削除する。それ以降に残っている場合は手動で `env.DISABLE_AUTOUPDATER` を削除する。なお自動アップデートした CLI はイメージ層に入るため、コンテナ再作成時はイメージのバージョンに戻る（起動後に再度自動アップデートされる） |
 
 ## 8. よくある質問（FAQ）
 

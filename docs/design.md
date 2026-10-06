@@ -50,6 +50,7 @@ claude-code-container/
 ├── scripts/
 │   ├── check-env.sh            # セットアップ前環境チェック
 │   ├── up.sh                    # 起動スクリプト（CONTAINER_ENGINE に応じてcompose起動コマンド・overrideファイルを選択）
+│   ├── rebuild.sh               # コンテナ破棄→イメージのキャッシュ無し再ビルド→up.sh で再起動（ボリュームは保持）
 │   ├── entrypoint.sh            # コンテナ常駐用エントリポイント（初回clone・権限調整）
 │   ├── session-branch.sh        # 対話セッション開始検知→ブランチ作成
 │   ├── git-autocommit.sh        # 変更検知→commit/push 自動化
@@ -71,7 +72,7 @@ claude-code-container/
 | --- | --- |
 | ベースイメージ | `debian:bookworm-slim` または `ubuntu:22.04` などの LTS 系 |
 | ランタイム | Node.js 18 系（LTS）を `nodesource` 等から導入し、Claude Code CLI の動作要件を満たす |
-| Claude Code CLI | `npm install -g @anthropic-ai/claude-code` 相当。`ARG CLAUDE_CODE_VERSION` でビルド時に固定バージョン／最新版を選択可能にする |
+| Claude Code CLI | `npm install -g @anthropic-ai/claude-code` 相当。`ARG CLAUDE_CODE_VERSION` でビルド時に固定バージョン／最新版を選択可能にする。自動アップデートを可能にするため、`NPM_CONFIG_PREFIX=/home/dev/.npm-global` として `dev` ユーザー権限（sudo 無し）でインストールする |
 | 同梱ツール | `git`, `gh`（GitHub CLI）, `python3`/`pip`, `tmux`, `curl`, `ca-certificates` |
 | 実行ユーザー | 非rootの一般ユーザー（例: `dev`, UID/GID をホストと合わせられるよう `ARG` で調整可） |
 | 作業ディレクトリ | `/workspace` |
