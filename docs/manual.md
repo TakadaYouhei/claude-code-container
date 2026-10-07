@@ -14,7 +14,8 @@
 | 項目 | 内容 |
 | --- | --- |
 | ホスト | インターネットに接続できる Linux サーバー（クラウド VM 等） |
-| コンテナエンジン | Docker（+ docker compose）または Podman（+ podman-compose 等） のいずれか |
+| コンテナエンジン | Podman 4.0 以上（rootless）と、`podman compose` または `podman-compose`。Docker には対応しない |
+| `/dev/fuse` | コンテナ内で podman（ビルド用コンテナ）を動かすのに必要（fuse カーネルモジュール） |
 | Claude.ai アカウント | Claude Code を利用可能なプラン（Pro/Max 等）。または `ANTHROPIC_API_KEY` |
 | Git | 作業対象のリポジトリへアクセスできる認証情報（GitHub PAT または SSH 鍵） |
 
@@ -26,7 +27,7 @@
 1. リポジトリを取得する
 2. 環境変数ファイル（.env）を準備する
 3. 環境チェックを実行する（scripts/check-env.sh）
-4. コンテナエンジンを選択してコンテナを起動する
+4. コンテナを起動する
 5. 初回ログイン（認証）を行う
 6. 作業対象リポジトリを指定する
 ```
@@ -53,7 +54,6 @@ cp .env.example .env
 | --- | --- | --- |
 | `GIT_REPO_URL` | 必須 | 初回起動時に自動 clone する対象リポジトリの URL |
 | `GIT_BASE_BRANCH` | 任意（既定 `main`） | セッション用ブランチの作成元となるベースブランチ |
-| `CONTAINER_ENGINE` | 任意（既定は自動検出） | 使用するコンテナエンジン（`docker` または `podman`）。未指定の場合、`docker` コマンドがあれば `docker`、無く `podman` コマンドのみがあれば `podman` を自動的に選択する（両方無い場合は `docker`） |
 | `ANTHROPIC_API_KEY` | 任意 | API キー認証を使う場合に設定する（未設定時は OAuth ログインを想定） |
 | `CLAUDE_AUTO_APPROVE` | 任意（既定 `true`） | 自動承認モード（4.2）の有効/無効 |
 
@@ -70,8 +70,9 @@ cp .env.example .env
 
 以下の項目が OK / NG で表示される。
 
-- 選択したコンテナエンジン（Docker または Podman）がインストール済みで、動作要件を満たすバージョンか（必須）
-- `docker compose` / `podman-compose` 等の compose ツールが利用可能か（必須）
+- Podman がインストール済みで、動作要件（4.0 以上）を満たすバージョンか（必須）
+- `podman compose` / `podman-compose` が利用可能か（必須）
+- `/dev/fuse` があるか（必須・コンテナ内で podman を動かすのに使う）
 - `git` など必須コマンドが PATH 上に存在するか（必須）
 - ディスク空き容量が最低要件を満たしているか（必須）
 - git の `user.name` / `user.email` が設定済みか（任意・未設定でも警告表示のみでセットアップは続行できる）
@@ -85,24 +86,16 @@ cp .env.example .env
 際の author 情報が空になるため、`git config --global user.name "<名前>"` /
 `git config --global user.email "<メールアドレス>"` をあらかじめ設定しておくことを推奨する。
 
-### 3.4 コンテナエンジンの選択と起動
+### 3.4 コンテナの起動
 
-Docker と Podman のどちらを使うかは、`.env` の `CONTAINER_ENGINE`（`docker` または `podman`）で
-指定する。未指定の場合は、ホストに `docker` コマンドがあれば Docker を、無く `podman` コマンドの
-みが存在すれば Podman を自動的に選択する（Podman のみをインストールしたホストで明示指定を忘れて
-も NG にならない）。起動は Docker / Podman いずれの場合も `scripts/up.sh` 経由で行う。
-`docker compose` / `podman-compose` を直接叩く必要はない。
+起動は `scripts/up.sh` 経由で行う。`podman compose` / `podman-compose` を直接叩く必要はない。
 
 ```bash
 ./scripts/up.sh
 ```
 
-> `scripts/up.sh` は `CONTAINER_ENGINE` の値を見て、Docker の場合は `docker compose up -d` を、
-> Podman の場合は `podman compose`（無ければ `podman-compose`）に加えて
-> `docker-compose.podman.yml`（SELinux ラベル `:Z`/`:z` 等の差分を定義した override）を
-> 自動的に重ねて適用する。この override ファイルの指定を利用者が手動で行う必要はない。
-> sudo 権限や Docker デーモンが使えないホスト（会社支給端末など）でも Podman を選択すれば
-> 同様の使用感で利用できる。
+> `scripts/up.sh` は `podman compose`（無ければ `podman-compose`）で `compose.yml` を使って起動する。
+> sudo 権限が使えないホスト（会社支給端末など）でも rootless で利用できる。
 
 起動後、コンテナはバックグラウンドで常駐する（`restart: unless-stopped` 相当のポリシー）。
 ホストやコンテナが予期せず再起動しても、作業内容・認証情報は失われない（詳細は 6 章）。
@@ -112,8 +105,7 @@ Docker と Podman のどちらを使うかは、`.env` の `CONTAINER_ENGINE`（
 コンテナ内シェルにアタッチし、Claude.ai アカウントで認証する。
 
 ```bash
-docker exec -it <コンテナ名> bash
-# または podman exec -it <コンテナ名> bash
+podman exec -it -u dev <コンテナ名> bash
 
 claude login
 ```
@@ -145,8 +137,8 @@ ssh <ホスト>
 ./scripts/attach.sh
 ```
 
-`scripts/attach.sh` は `CONTAINER_ENGINE` の値に応じてコンテナを特定し、
-`docker exec -it <コンテナ名> tmux attach -t work || docker exec -it <コンテナ名> tmux new -s work`
+`scripts/attach.sh` はコンテナを特定し、
+`podman exec -it -u dev <コンテナ名> tmux attach -t work || podman exec -it -u dev <コンテナ名> tmux new -s work`
 に相当する処理を行う（毎回コンテナ名を打ち込む必要がない）。`up.sh` と同様に、
 複数プロジェクトを起動している場合は引数でプロジェクト名を指定できる
 （`./scripts/attach.sh <プロジェクト名>`）。
@@ -167,7 +159,20 @@ claude
 承認確認なしに自律的に最後まで実行する。ただし force push などの破壊的操作はデフォルトでは
 自動実行されない。逐一承認しながら進めたい場合は、対話モードに切り替えることもできる。
 
-### 4.3 対話セッションとブランチ・commit / push の関係
+### 4.3 コンテナ内でのビルド用コンテナの利用
+
+コンテナ内の `dev` ユーザーは rootless の `podman` を使える。ビルド環境をコンテナで用意したい場合は、
+コンテナ内でそのまま `podman build` / `podman run` を実行する。
+
+```bash
+podman run --rm -v "$PWD":/src:Z -w /src docker.io/library/debian:bookworm make
+```
+
+- イメージ名は `docker.io/library/debian` のように完全な名前で指定する（短い名前の解決先は
+  設定していない）。
+- pull したイメージは `podman-storage` ボリュームに保存されるため、コンテナを作り直しても残る。
+
+### 4.4 対話セッションとブランチ・commit / push の関係
 
 Claude Code との1回の会話単位（＝1タスク）を「対話セッション」と呼ぶ。これは `tmux` / SSH の
 接続セッションとは別の概念であり、SSH・`tmux` の接続を切断・再接続しても対話セッション自体
@@ -206,7 +211,7 @@ Claude Code との1回の会話単位（＝1タスク）を「対話セッショ
 ./scripts/up.sh
 ```
 
-自動起動が設定されていれば、Docker/Podman サービスの起動に伴いコンテナも自動的に再起動する。
+自動起動が設定されていれば、Podman サービス（`podman-restart.service` 等）の起動に伴いコンテナも自動的に再起動する。
 復旧後は 4.1 の手順で `tmux` セッションにアタッチすれば、認証情報・作業内容が保持されたまま
 作業を再開できる。
 
@@ -219,14 +224,14 @@ Claude Code との1回の会話単位（＝1タスク）を「対話セッショ
 ```
 
 コンテナを破棄（`compose down`）し、イメージをキャッシュ無しで再ビルドしてから `up.sh` で起動し直す。
-ボリューム（認証情報・ワークスペース・dotfiles）は削除しないため、再ログインや再 clone は不要。
+ボリューム（認証情報・ワークスペース・dotfiles・podman-storage）は削除しないため、再ログインや再 clone は不要。
 
 コンテナのログは標準出力または永続化されたログファイルで確認できる。
 
 ```bash
-docker compose logs -f
-# Podman の場合
-podman compose logs -f
+podman compose -f compose.yml logs -f
+# podman compose が無い場合
+podman-compose -f compose.yml logs -f
 ```
 
 ## 7. トラブルシューティング
@@ -236,15 +241,20 @@ podman compose logs -f
 | セットアップが環境チェックで止まる | コンテナエンジン未インストール、`git` 未インストール、ネットワーク不通 等 | `./scripts/check-env.sh` の出力に従い、指示されたコマンドで不足しているソフトウェアを導入する |
 | `claude` コマンドで再ログインを求められる | 認証情報用ボリュームがマウントされていない、別ボリュームでコンテナを再作成した | ボリューム設定を確認し、認証情報ディレクトリ（`~/.claude` 等）が永続化されているか確認する |
 | `git push` が失敗する | 認証情報（PAT/SSH 鍵）の期限切れ、ブランチの競合、ネットワーク断 | エラー内容を確認し、認証情報を更新するかコンフリクトを解消したうえで再度指示を送る |
-| Podman でボリュームの権限エラーが出る | SELinux ラベルが付与されていない | `docker compose` などを直接使わず `./scripts/up.sh` 経由で起動する（`docker-compose.podman.yml` の override が自動適用される） |
+| Podman でボリュームの権限エラーが出る | SELinux ラベルが付与されていない | `compose.yml` を使わずに `podman run` 等で直接起動していないか確認し、`./scripts/up.sh` 経由で起動する |
+| コンテナ内の `podman` が `fuse: device not found` 等で失敗する | ホストに `/dev/fuse` が無い、または古い定義で起動したコンテナを使っている | ホストで `sudo modprobe fuse` を実行し、`./scripts/up.sh` でコンテナを作り直す |
+| `./scripts/up.sh` でコンテナが起動せず、SELinux の型 `container_engine_t` に関するエラーが出る | ホストの SELinux ポリシー（container-selinux）が古く、`container_engine_t` が無い | `sudo dnf update container-selinux` で更新する。更新できない場合は `compose.yml` の `label=type:container_engine_t` を `label=disable` に置き換える（SELinux による閉じ込めが外れる） |
+| コンテナ内の `podman` が `Permission denied` で失敗し、ホストの `sudo ausearch -m avc -ts recent` に拒否記録がある | SELinux のポリシーで許されていない操作がある | 拒否記録の内容を確認する。切り分けとして一時的に `label=disable` で起動して動くか確かめる |
+| コンテナ内の `podman run` が `mount proc` 等で `Operation not permitted` になる | 入れ子のコンテナで proc をマウントできない | 外側コンテナの `/proc` を入れ子に渡す回避策（`containers.conf` の `volumes = ["/proc:/proc"]`）は、入れ子から外側の認証情報が見えるため既定では使っていない。設計書 3.2 節を参照 |
+| コンテナ内の `podman pull` が `insufficient UIDs or GIDs` で失敗する | イメージ内に 65535 を超える uid が持ち主のファイルがある | 外側コンテナで使える uid は 0〜65535 のため、そのイメージは使えない。別のイメージを使う |
+| コンテナ内の `podman pull ubuntu` が short-name エラーになる | 短い名前の解決先を設定していない | `docker.io/library/ubuntu` のように完全な名前で指定する |
 | ホスト再起動後にコンテナが起動しない | 自動起動が設定されていない | `./scripts/up.sh` を手動実行する |
 | `claude` の自動アップデートが行われない | `~/.claude/settings.json` に `DISABLE_AUTOUPDATER=1` が設定されている | 現在のイメージは Claude Code を `dev` ユーザーの npm グローバル領域（`~/.npm-global`）へ sudo 無しでインストールしているため自動アップデート可能。旧デフォルト設定由来の `DISABLE_AUTOUPDATER=1` は新イメージの初回起動時に `entrypoint.sh` が一度だけ自動削除する。それ以降に残っている場合は手動で `env.DISABLE_AUTOUPDATER` を削除する。なお自動アップデートした CLI はイメージ層に入るため、コンテナ再作成時はイメージのバージョンに戻る（起動後に再度自動アップデートされる） |
 
 ## 8. よくある質問（FAQ）
 
-**Q. Docker と Podman はどちらを使うべきですか。**
-A. 特に制約がなければ Docker がデフォルトです。sudo 権限がない、あるいは rootless 運用が
-必須の環境（会社支給端末など）では Podman を選択してください。
+**Q. Docker で使えますか。**
+A. 使えません。Podman（rootless）専用です。
 
 **Q. コンテナ内で複数のリポジトリを切り替えて使えますか。**
 A. 想定していません。1コンテナ＝1リポジトリが前提です。別リポジトリを扱いたい場合は、

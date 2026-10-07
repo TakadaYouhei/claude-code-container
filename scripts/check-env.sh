@@ -4,7 +4,6 @@
 #
 # 使い方:
 #   ./scripts/check-env.sh
-#   CONTAINER_ENGINE=podman ./scripts/check-env.sh
 #
 # 終了コード: 全項目 OK の場合 0、必須項目に1つでも NG がある場合 1。
 
@@ -20,9 +19,6 @@ if [ -f "${ROOT_DIR}/.env" ]; then
   set +a
 fi
 
-# shellcheck source=scripts/lib/detect-engine.sh
-source "${SCRIPT_DIR}/lib/detect-engine.sh"
-CONTAINER_ENGINE="$(detect_container_engine "${CONTAINER_ENGINE:-}")"
 MIN_DISK_GB="${MIN_DISK_GB:-10}"
 RECOMMENDED_MEM_GB="${RECOMMENDED_MEM_GB:-4}"
 CHECK_TARGET_DIR="${ROOT_DIR}"
@@ -54,77 +50,49 @@ version_ge() {
   [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]
 }
 
-# 1. コンテナエンジンの有無・バージョン
+# 1. Podman の有無・バージョン
 check_engine() {
-  case "${CONTAINER_ENGINE}" in
-    docker)
-      if ! command -v docker >/dev/null 2>&1; then
-        ng "Docker: 未インストール" \
-           "https://docs.docker.com/engine/install/ の手順に従い Docker Engine をインストールしてください。"
-        return
-      fi
-      local ver
-      ver="$(docker --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
-      if [ -z "${ver}" ]; then
-        ng "Docker: バージョン取得に失敗しました" "docker --version が正常に実行できるか確認してください。"
-        return
-      fi
-      if version_ge "${ver}" "20.10.0"; then
-        ok "Docker: ${ver} (>= 20.10 required)"
-      else
-        ng "Docker: ${ver} (>= 20.10 required)" "Docker を 20.10 以上にアップグレードしてください。"
-      fi
-      ;;
-    podman)
-      if ! command -v podman >/dev/null 2>&1; then
-        ng "Podman: 未インストール" \
-           "https://podman.io/docs/installation の手順に従い Podman をインストールしてください。"
-        return
-      fi
-      local ver
-      ver="$(podman --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
-      if [ -z "${ver}" ]; then
-        ng "Podman: バージョン取得に失敗しました" "podman --version が正常に実行できるか確認してください。"
-        return
-      fi
-      if version_ge "${ver}" "4.0.0"; then
-        ok "Podman: ${ver} (>= 4.0 required)"
-      else
-        ng "Podman: ${ver} (>= 4.0 required)" "Podman を 4.0 以上にアップグレードしてください。"
-      fi
-      ;;
-    *)
-      ng "CONTAINER_ENGINE: '${CONTAINER_ENGINE}' は未対応の値です" \
-         "CONTAINER_ENGINE には docker または podman を指定してください。"
-      ;;
-  esac
+  if ! command -v podman >/dev/null 2>&1; then
+    ng "Podman: 未インストール" \
+       "https://podman.io/docs/installation の手順に従い Podman をインストールしてください。"
+    return
+  fi
+  local ver
+  ver="$(podman --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+  if [ -z "${ver}" ]; then
+    ng "Podman: バージョン取得に失敗しました" "podman --version が正常に実行できるか確認してください。"
+    return
+  fi
+  if version_ge "${ver}" "4.0.0"; then
+    ok "Podman: ${ver} (>= 4.0 required)"
+  else
+    ng "Podman: ${ver} (>= 4.0 required)" "Podman を 4.0 以上にアップグレードしてください。"
+  fi
 }
 
 # 2. compose ツールの有無
 check_compose() {
-  case "${CONTAINER_ENGINE}" in
-    docker)
-      if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-        ok "docker compose: $(docker compose version --short 2>/dev/null || echo 'installed')"
-      else
-        ng "docker compose: 利用不可" \
-           "Docker Compose v2 プラグインを導入してください（Docker Desktop には同梱済み。Linux は docker-compose-plugin パッケージ）。"
-      fi
-      ;;
-    podman)
-      if command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
-        ok "podman compose: $(podman compose version 2>/dev/null | head -n1)"
-      elif command -v podman-compose >/dev/null 2>&1; then
-        ok "podman-compose: $(podman-compose --version 2>/dev/null | head -n1)"
-      else
-        ng "podman compose / podman-compose: 利用不可" \
-           "'pip install podman-compose' または podman compose プラグインを導入してください。"
-      fi
-      ;;
-  esac
+  if command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
+    ok "podman compose: $(podman compose version 2>/dev/null | head -n1)"
+  elif command -v podman-compose >/dev/null 2>&1; then
+    ok "podman-compose: $(podman-compose --version 2>/dev/null | head -n1)"
+  else
+    ng "podman compose / podman-compose: 利用不可" \
+       "'pip install podman-compose' または podman compose プラグインを導入してください。"
+  fi
 }
 
-# 3. 必須コマンド
+# 3. /dev/fuse（コンテナ内の podman が fuse-overlayfs で使う）
+check_fuse() {
+  if [ -c /dev/fuse ]; then
+    ok "/dev/fuse: 利用可能"
+  else
+    ng "/dev/fuse: 見つかりません" \
+       "fuse カーネルモジュールを読み込んでください（例: 'sudo modprobe fuse'）。コンテナ内で podman を動かすのに必要です。"
+  fi
+}
+
+# 4. 必須コマンド
 check_required_commands() {
   local cmd
   for cmd in git; do
@@ -136,7 +104,7 @@ check_required_commands() {
   done
 }
 
-# 4. ディスク空き容量
+# 5. ディスク空き容量
 check_disk_space() {
   local avail_kb avail_gb
   avail_kb="$(df -Pk "${CHECK_TARGET_DIR}" 2>/dev/null | awk 'NR==2 {print $4}')"
@@ -153,7 +121,7 @@ check_disk_space() {
   fi
 }
 
-# 5. git ユーザー情報（任意・警告のみ）
+# 6. git ユーザー情報（任意・警告のみ）
 check_git_identity() {
   if ! command -v git >/dev/null 2>&1; then
     return
@@ -169,7 +137,7 @@ check_git_identity() {
   fi
 }
 
-# 6. メモリ（任意・警告のみ）
+# 7. メモリ（任意・警告のみ）
 check_memory() {
   local mem_kb mem_gb
   if [ -r /proc/meminfo ]; then
@@ -186,7 +154,7 @@ check_memory() {
   fi
 }
 
-# 7. ネットワーク到達性
+# 8. ネットワーク到達性
 check_network() {
   if ! command -v curl >/dev/null 2>&1; then
     ng "network reachability: curl が見つかりません" "curl をインストールしてから再実行してください。"
@@ -201,9 +169,10 @@ check_network() {
   fi
 }
 
-echo "=== claude-code-container 環境チェック (CONTAINER_ENGINE=${CONTAINER_ENGINE}) ==="
+echo "=== claude-code-container 環境チェック ==="
 check_engine
 check_compose
+check_fuse
 check_required_commands
 check_disk_space
 check_git_identity

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# アタッチスクリプト: CONTAINER_ENGINE に応じて docker/podman exec を選択し、
+# アタッチスクリプト: podman exec で
 # コンテナ内の tmux セッション（work）にアタッチする。無ければ新規作成する。
 #
 # 使い方:
@@ -18,9 +18,8 @@ if [ -f "${ROOT_DIR}/.env" ]; then
   set +a
 fi
 
-# shellcheck source=scripts/lib/detect-engine.sh
-source "${SCRIPT_DIR}/lib/detect-engine.sh"
-CONTAINER_ENGINE="$(detect_container_engine "${CONTAINER_ENGINE:-}")"
+# shellcheck source=scripts/lib/compose-cmd.sh
+source "${SCRIPT_DIR}/lib/compose-cmd.sh"
 
 PROJECT_ARGS=()
 if [ -n "${PROJECT_NAME}" ]; then
@@ -29,34 +28,11 @@ fi
 
 cd "${ROOT_DIR}"
 
-case "${CONTAINER_ENGINE}" in
-  docker)
-    COMPOSE_CMD=(docker compose)
-    ;;
-  podman)
-    if command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
-      COMPOSE_CMD=(podman compose -f docker-compose.yml -f docker-compose.podman.yml)
-    elif command -v podman-compose >/dev/null 2>&1; then
-      COMPOSE_CMD=(podman-compose -f docker-compose.yml -f docker-compose.podman.yml)
-    else
-      echo "podman compose / podman-compose が見つかりません。./scripts/check-env.sh を実施済みか確認してください。" >&2
-      exit 1
-    fi
-    ;;
-  *)
-    echo "CONTAINER_ENGINE: '${CONTAINER_ENGINE}' は未対応の値です。docker または podman を指定してください。" >&2
-    exit 1
-    ;;
-esac
+detect_compose_cmd || exit 1
 
 # podman-compose の `ps` サブコマンドは docker compose と異なり、
-# サービス名を引数として受け付けない（`-q`/`--quiet` のみ対応）ため、
-# podman 系エンジンではサービス名を渡さない。
-PS_ARGS=(ps -q)
-if [ "${CONTAINER_ENGINE}" = "docker" ]; then
-  PS_ARGS=(ps -q claude-code)
-fi
-CONTAINER_ID="$("${COMPOSE_CMD[@]}" "${PROJECT_ARGS[@]}" "${PS_ARGS[@]}" | head -n1)"
+# サービス名を引数として受け付けない（`-q`/`--quiet` のみ対応）ため、サービス名は渡さない。
+CONTAINER_ID="$("${COMPOSE_CMD[@]}" "${PROJECT_ARGS[@]}" ps -q | head -n1)"
 if [ -z "${CONTAINER_ID}" ]; then
   echo "起動中のコンテナが見つかりません。先に ./scripts/up.sh を実行してください。" >&2
   exit 1
@@ -71,8 +47,8 @@ fi
 # また `exec A || exec B` は A の起動（execve）自体が失敗した場合のみ B を実行する
 # ため、A（tmux attach）が「起動はできたがセッションが無く終了コード非0で終わる」
 # ケースでは B（tmux new）にフォールバックできない。判定と exec を分離する。
-if "${CONTAINER_ENGINE}" exec -u dev "${CONTAINER_ID}" tmux has-session -t work 2>/dev/null; then
-  exec "${CONTAINER_ENGINE}" exec -it -u dev "${CONTAINER_ID}" tmux attach -t work
+if podman exec -u dev "${CONTAINER_ID}" tmux has-session -t work 2>/dev/null; then
+  exec podman exec -it -u dev "${CONTAINER_ID}" tmux attach -t work
 else
-  exec "${CONTAINER_ENGINE}" exec -it -u dev "${CONTAINER_ID}" tmux new -s work
+  exec podman exec -it -u dev "${CONTAINER_ID}" tmux new -s work
 fi

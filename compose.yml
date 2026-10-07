@@ -1,0 +1,42 @@
+# Podman（rootless）専用の compose 定義。scripts/up.sh 経由で起動する。
+# 対応要件: 4.8, 5.1, 5.4（docs/design.md 4章・9章）
+services:
+  claude-code:
+    build:
+      context: .
+      args:
+        CONTAINER_UID: ${CONTAINER_UID:-1000}
+        CONTAINER_GID: ${CONTAINER_GID:-1000}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GIT_REPO_URL=${GIT_REPO_URL}
+      - GIT_BASE_BRANCH=${GIT_BASE_BRANCH:-main}
+      - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-true}
+    # コンテナ内で rootless podman（ビルド用コンテナ）を動かすための設定。
+    # fuse-overlayfs に /dev/fuse が必要。
+    # SELinux の既定の型（container_t）では入れ子の podman のマウントが拒否されるため、
+    # container-selinux が「コンテナ内でコンテナエンジンを動かす」用に用意している
+    # container_engine_t を使う。label=disable と違い、SELinux による閉じ込めは残る。
+    # ホストのポリシーにこの型が無い場合は、label=disable に置き換える（隔離は弱まる）。
+    devices:
+      - /dev/fuse
+    security_opt:
+      - label=type:container_engine_t
+    # SELinux ラベル（:Z）付きでマウントする。
+    volumes:
+      - claude-config:/home/dev/.claude:Z
+      - workspace:/workspace:Z
+      - dotfiles:/home/dev/.dotfiles:Z
+      # 入れ子の podman のイメージ・コンテナ置き場。コンテナを作り直しても pull 済みイメージを残し、
+      # overlay の上に overlay を重ねないようにボリュームにする。
+      - podman-storage:/home/dev/.local/share/containers:Z
+
+volumes:
+  claude-config:
+  workspace:
+  dotfiles:
+  podman-storage:
