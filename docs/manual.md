@@ -171,7 +171,6 @@ podman run --rm -v "$PWD":/src:Z -w /src docker.io/library/debian:bookworm make
 - イメージ名は `docker.io/library/debian` のように完全な名前で指定する（短い名前の解決先は
   設定していない）。
 - pull したイメージは `podman-storage` ボリュームに保存されるため、コンテナを作り直しても残る。
-- 入れ子のコンテナからは外側コンテナの `/proc`（プロセス一覧）が見える。
 
 ### 4.4 対話セッションとブランチ・commit / push の関係
 
@@ -244,6 +243,7 @@ podman-compose -f compose.yml logs -f
 | `git push` が失敗する | 認証情報（PAT/SSH 鍵）の期限切れ、ブランチの競合、ネットワーク断 | エラー内容を確認し、認証情報を更新するかコンフリクトを解消したうえで再度指示を送る |
 | Podman でボリュームの権限エラーが出る | SELinux ラベルが付与されていない | `compose.yml` を使わずに `podman run` 等で直接起動していないか確認し、`./scripts/up.sh` 経由で起動する |
 | コンテナ内の `podman` が `fuse: device not found` 等で失敗する | ホストに `/dev/fuse` が無い、または古い定義で起動したコンテナを使っている | ホストで `sudo modprobe fuse` を実行し、`./scripts/up.sh` でコンテナを作り直す |
+| コンテナ内の `podman run` が `mount proc` 等で `Operation not permitted` になる | 入れ子のコンテナで proc をマウントできない | 外側コンテナの `/proc` を入れ子に渡す回避策（`containers.conf` の `volumes = ["/proc:/proc"]`）は、入れ子から外側の認証情報が見えるため既定では使っていない。設計書 3.2 節を参照 |
 | コンテナ内の `podman pull` が `insufficient UIDs or GIDs` で失敗する | イメージ内に 65535 を超える uid が持ち主のファイルがある | 外側コンテナで使える uid は 0〜65535 のため、そのイメージは使えない。別のイメージを使う |
 | コンテナ内の `podman pull ubuntu` が short-name エラーになる | 短い名前の解決先を設定していない | `docker.io/library/ubuntu` のように完全な名前で指定する |
 | ホスト再起動後にコンテナが起動しない | 自動起動が設定されていない | `./scripts/up.sh` を手動実行する |

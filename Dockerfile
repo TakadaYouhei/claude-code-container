@@ -74,7 +74,6 @@ RUN mkdir -p /home/dev/.config/containers /home/dev/.local/share/containers \
         > /home/dev/.config/containers/storage.conf \
     && printf '%s\n' \
         '[containers]' \
-        'volumes = ["/proc:/proc"]' \
         'default_sysctls = []' \
         '[engine]' \
         'cgroup_manager = "cgroupfs"' \
