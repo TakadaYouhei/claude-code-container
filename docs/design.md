@@ -124,7 +124,7 @@ services:
     devices:
       - /dev/fuse
     security_opt:
-      - label=disable
+      - label=type:container_engine_t
     volumes:
       - claude-config:/home/dev/.claude:Z
       - workspace:/workspace:Z
@@ -139,9 +139,14 @@ volumes:
 ```
 
 - コンテナエンジンは Podman（rootless）専用とする。ボリュームには SELinux ラベル `:Z` を付ける。
-- `devices: /dev/fuse` と `security_opt: label=disable` は、コンテナ内で rootless podman
-  （3.2 節）を動かすために必要。fuse-overlayfs が `/dev/fuse` を使い、SELinux のラベル分離が
-  入れ子の podman のマウントを拒否するため。その分、外側コンテナの隔離は弱まる。
+- `devices: /dev/fuse` と `security_opt: label=type:container_engine_t` は、コンテナ内で
+  rootless podman（3.2 節）を動かすために必要。fuse-overlayfs が `/dev/fuse` を使い、SELinux の
+  既定の型（`container_t`）では入れ子の podman のマウント（fuse・proc・sysfs 等）が拒否されるため。
+  `container_engine_t` は container-selinux が「コンテナ内でコンテナエンジンを動かす」用に用意している
+  型で、マウントは許しつつ SELinux による閉じ込め（MCS による他コンテナとの分離など）は残る。
+- ホストの SELinux ポリシーに `container_engine_t` が無い場合（`seinfo -t container_engine_t` で確認）は
+  `label=disable` に置き換える。この場合は SELinux による閉じ込めが外れ、コンテナから抜け出された
+  ときの歯止めが無くなる。
 - プロジェクトを複数並行稼働させる場合は `-p <project-name>` を指定し、ボリューム名の衝突を防ぐ
   （5章参照）。`scripts/up.sh` は第一引数にプロジェクト名を受け取り、`-p` へ渡す。
 
@@ -263,7 +268,7 @@ podman の compose コマンドでコンテナを起動するスクリプト。�
 | compose 実行コマンド | `podman compose` または `podman-compose`。`scripts/lib/compose-cmd.sh` が存在確認をして自動選択し、`scripts/up.sh`・`scripts/rebuild.sh`・`scripts/attach.sh` が共有する |
 | デーモンの有無 | デーモンレス・rootless。`sudo` 不要な手順のみを案内する |
 | ネットワークモード | slirp4netns 等。明示的なポート公開が必要な場合のみ compose 側で調整 |
-| コンテナ内 podman | `/dev/fuse` の受け渡しと `label=disable` が必要（4章・3.2 節） |
+| コンテナ内 podman | `/dev/fuse` の受け渡しと `label=type:container_engine_t` が必要（4章・3.2 節） |
 
 対応要件: 4.8, 5.1, 5.4
 
