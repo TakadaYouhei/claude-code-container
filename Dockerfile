@@ -49,6 +49,38 @@ RUN groupadd -g "${CONTAINER_GID}" dev \
     && mkdir -p "${WORKSPACE}" /home/dev/.claude /home/dev/.dotfiles /home/dev/.npm-global \
     && chown -R dev:dev "${WORKSPACE}" /home/dev
 
+# コンテナ内でビルド用コンテナを動かすための podman 本体と、rootless で動かすための部品
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        podman uidmap fuse-overlayfs slirp4netns crun \
+    && rm -rf /var/lib/apt/lists/*
+
+# 外側のコンテナで使える uid/gid は 0〜65535 だけなので、その範囲内で割り当てる。
+# dev 自身の uid/gid と重ならないよう、その次の番号から 65535 までを使う
+# （CONTAINER_UID/GID を変えても重ならないよう ARG から計算する）。
+RUN uid_start=$((CONTAINER_UID + 1)) \
+    && gid_start=$((CONTAINER_GID + 1)) \
+    && echo "dev:${uid_start}:$((65536 - uid_start))" > /etc/subuid \
+    && echo "dev:${gid_start}:$((65536 - gid_start))" > /etc/subgid
+
+# dev ユーザー用の podman 設定（入れ子のコンテナ内では systemd/journald が無いため cgroupfs・file を使う）
+RUN mkdir -p /home/dev/.config/containers /home/dev/.local/share/containers \
+    && printf '%s\n' \
+        '[storage]' \
+        'driver = "overlay"' \
+        '[storage.options.overlay]' \
+        'mount_program = "/usr/bin/fuse-overlayfs"' \
+        > /home/dev/.config/containers/storage.conf \
+    && printf '%s\n' \
+        '[containers]' \
+        'volumes = ["/proc:/proc"]' \
+        'default_sysctls = []' \
+        '[engine]' \
+        'cgroup_manager = "cgroupfs"' \
+        'events_logger = "file"' \
+        > /home/dev/.config/containers/containers.conf \
+    && chown -R dev:dev /home/dev/.config /home/dev/.local
+
 # npm のグローバルインストール先を dev ユーザーのホーム配下にする。
 # Claude Code の自動アップデートは実行ユーザー（dev）権限で `npm install -g` を行うため、
 # root 所有の /usr/lib/node_modules ではなく dev が書き込める場所へ入れておく必要がある。
