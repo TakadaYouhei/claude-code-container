@@ -18,9 +18,8 @@ if [ -f "${ROOT_DIR}/.env" ]; then
   set +a
 fi
 
-# shellcheck source=scripts/lib/detect-engine.sh
-source "${SCRIPT_DIR}/lib/detect-engine.sh"
-CONTAINER_ENGINE="$(detect_container_engine "${CONTAINER_ENGINE:-}")"
+# shellcheck source=scripts/lib/compose-cmd.sh
+source "${SCRIPT_DIR}/lib/compose-cmd.sh"
 
 PROJECT_ARGS=()
 if [ -n "${PROJECT_NAME}" ]; then
@@ -29,29 +28,7 @@ fi
 
 cd "${ROOT_DIR}"
 
-case "${CONTAINER_ENGINE}" in
-  docker)
-    if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
-      echo "docker compose が見つかりません。./scripts/check-env.sh を実施済みか確認してください。" >&2
-      exit 1
-    fi
-    COMPOSE_CMD=(docker compose)
-    ;;
-  podman)
-    if command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
-      COMPOSE_CMD=(podman compose -f docker-compose.yml -f docker-compose.podman.yml)
-    elif command -v podman-compose >/dev/null 2>&1; then
-      COMPOSE_CMD=(podman-compose -f docker-compose.yml -f docker-compose.podman.yml)
-    else
-      echo "podman compose / podman-compose が見つかりません。./scripts/check-env.sh を実施済みか確認してください。" >&2
-      exit 1
-    fi
-    ;;
-  *)
-    echo "CONTAINER_ENGINE: '${CONTAINER_ENGINE}' は未対応の値です。docker または podman を指定してください。" >&2
-    exit 1
-    ;;
-esac
+detect_compose_cmd || exit 1
 
 # ボリュームを消すと再ログイン・再 clone が必要になるため、-v は付けない。
 echo "=== コンテナを破棄します（ボリュームは保持） ==="
@@ -61,7 +38,7 @@ echo "=== コンテナを破棄します（ボリュームは保持） ==="
 echo "=== イメージをキャッシュ無しで再ビルドします ==="
 "${COMPOSE_CMD[@]}" "${PROJECT_ARGS[@]}" build --no-cache
 
-# 起動処理（環境チェック・override 適用）は up.sh に任せる。
+# 起動処理（環境チェック含む）は up.sh に任せる。
 # 直前にビルド済みのため、up.sh 内の --build はキャッシュが効いてすぐ終わる。
 "${SCRIPT_DIR}/up.sh" "${PROJECT_NAME}"
 

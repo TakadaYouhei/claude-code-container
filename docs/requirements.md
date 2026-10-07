@@ -22,8 +22,9 @@ Claude Code を継続的に稼働させられる「コンテナ艦橋」を提�
 ### 3.1 対象
 
 - Claude Code CLI を実行できるコンテナイメージ（Dockerfile）一式。
-- コンテナエンジンとして Docker に加え Podman を選択できる構成（compose 定義、起動スクリプト等）。
-- コンテナを常駐させ、外部からアタッチ／再接続するための構成（docker-compose／podman-compose、起動スクリプト等）。
+- コンテナエンジンとして Podman（rootless）で動かす構成（compose 定義、起動スクリプト等）。
+- コンテナを常駐させ、外部からアタッチ／再接続するための構成（podman compose／podman-compose、起動スクリプト等）。
+- コンテナ内で rootless podman によりビルド用コンテナを動かせる構成。
 - 認証情報・作業データを永続化するためのボリューム設計。
 - セットアップ実行前にホスト環境の要件充足を確認する環境チェック機能。
 
@@ -56,8 +57,8 @@ Claude Code を継続的に稼働させられる「コンテナ艦橋」を提�
 ### 4.4 常駐・リモートアクセス
 
 - コンテナはフォアグラウンドプロセスを持たせて常駐させる（例: `tail -f /dev/null` やシェル待受、
-  もしくは `docker run -d` / `podman run -d` + `restart: unless-stopped` 相当のポリシー）。
-- 利用者はコンテナ起動後、`docker exec` / `podman exec` または SSH 経由でシェルにアタッチし、`claude`
+  もしくは `podman run -d` + `restart: unless-stopped` 相当のポリシー）。
+- 利用者はコンテナ起動後、`podman exec` または SSH 経由でシェルにアタッチし、`claude`
   コマンドを対話的に実行できること。
 - 長時間セッションの途中切断・再接続に耐えられるよう、`tmux` または `screen` をコンテナに同梱し、
   セッションを維持できるようにする。
@@ -86,26 +87,23 @@ Claude Code を継続的に稼働させられる「コンテナ艦橋」を提�
 - Claude Code の API 通信（Anthropic API / claude.ai への OAuth 通信）に必要なアウトバウンド通信を許可する。
 - 特別なプロキシやサンドボックス制御は本フェーズでは必須としない。
 
-### 4.8 コンテナエンジンの選択
+### 4.8 コンテナエンジン
 
-- コンテナエンジンとして Docker（Docker Engine + docker compose）をデフォルトとしつつ、
-  Podman（`podman` + `podman-compose` もしくは `podman compose`）を選択できること。
-- 利用者は環境変数・設定ファイル・起動スクリプトの引数等により、セットアップ時にどちらの
-  コンテナエンジンを使用するか選択できること。
-- Podman を選択した場合、rootless 実行を基本とする。ボリュームマウント時の SELinux ラベル
-  （`:Z`／`:z`）付与やネットワークモードの違いなど、Docker との差異を起動スクリプト側で吸収すること。
-- compose 定義（`docker-compose.yml` 等）は、選択したコンテナエンジンでそのまま利用できるか、
-  エンジンごとに互換性のある構成を用意すること。
-- 一部エンジン固有の機能に依存する場合は、その旨をドキュメントに明記し、代替手段を示すこと。
+- コンテナエンジンは Podman（`podman` + `podman-compose` もしくは `podman compose`）の rootless 実行
+  専用とする。Docker には対応しない。
+- ボリュームマウント時の SELinux ラベル（`:Z`）付与は compose 定義（`compose.yml`）で行う。
+- コンテナ内で rootless podman を動かし、ビルド用コンテナを作れること。そのために必要な設定
+  （`/dev/fuse` の受け渡し、SELinux ラベル分離の無効化等）は compose 定義に含め、外側コンテナの
+  隔離が弱まる点をドキュメントに明記すること。
 
 ### 4.9 セットアップ前環境チェック
 
 - セットアップスクリプト（イメージビルド・コンテナ起動）を実行する前に、ホスト環境が要件を
   満たしているかを自動検証する「環境チェック」機能を提供する。
 - 環境チェックの主な確認項目:
-  - 選択したコンテナエンジン（Docker または Podman）がインストール済みであり、動作要件を満たす
-    バージョンであること。
-  - compose 相当のツール（`docker compose` / `podman-compose` 等）が利用可能であること。
+  - Podman がインストール済みであり、動作要件を満たすバージョンであること。
+  - compose 相当のツール（`podman compose` / `podman-compose`）が利用可能であること。
+  - コンテナ内 podman に必要な `/dev/fuse` がホストにあること。
   - `git` など、セットアップに必要なコマンドが PATH 上に存在すること。
   - ホストのディスク空き容量・メモリなど、必要に応じた最低リソース要件を満たすこと。
   - Anthropic API / claude.ai への到達性（インターネット接続）を確認できること。
@@ -160,26 +158,25 @@ Claude Code を継続的に稼働させられる「コンテナ艦橋」を提�
 
 ### 5.2 可用性・運用性
 
-- コンテナ・ホストの予期しない再起動後も、`docker compose up -d` / `podman-compose up -d` 等の
+- コンテナ・ホストの予期しない再起動後も、`scripts/up.sh`（`podman-compose up -d` 相当）等の
   単純な操作で環境を復旧できること。
 - コンテナのログは標準出力または永続化されたログファイルで確認できること。
 
 ### 5.3 保守性
 
-- Dockerfile / docker-compose.yml はバージョン管理し、変更履歴を追えること。
+- Dockerfile / compose.yml はバージョン管理し、変更履歴を追えること。
 - Claude Code CLI やベースイメージのバージョンアップに追従しやすい構成にする。
 
 ### 5.4 移植性
 
-- 特定のクラウドベンダーに依存しない、標準的な Docker / Podman ベースの構成とし、いずれの
-  コンテナエンジンでも同等の手順で利用できること。
+- 特定のクラウドベンダーに依存しない、標準的な Podman ベースの構成とすること。
 
 ## 6. 構成イメージ（案）
 
 ```
 claude-code-container/
 ├── Dockerfile              # Claude Code CLI + 開発ツールを含むイメージ定義
-├── docker-compose.yml      # 常駐起動・ボリュームマウント定義（Docker / Podman 両対応）
+├── compose.yml             # 常駐起動・ボリュームマウント定義（Podman 専用）
 ├── scripts/
 │   └── check-env.sh        # セットアップ前環境チェックスクリプト
 ├── docs/
@@ -187,21 +184,20 @@ claude-code-container/
 └── README.md
 ```
 
-- `docker-compose.yml` で以下を定義する想定:
+- `compose.yml` で以下を定義する想定:
   - サービス本体（`restart: unless-stopped`）
   - ボリューム: 認証情報用・ワークスペース用
   - 必要に応じたポート公開（SSH 経由でアタッチする場合）
-  - `docker compose` / `podman-compose`（または `podman compose`）のいずれでも起動できる構成
+  - `podman-compose`（または `podman compose`）で起動できる構成
 - `scripts/check-env.sh` で以下を検証する想定:
-  - 選択したコンテナエンジン（Docker / Podman）および compose ツールの有無・バージョン
+  - Podman および compose ツールの有無・バージョン
   - 必須コマンド（`git` 等）の有無
   - Anthropic API / claude.ai への到達性
 
 ## 7. 前提条件・制約
 
 - 利用者は Claude.ai の有効なアカウント（Pro/Max 等、Claude Code が利用可能なプラン）を保持していること。
-- ホスト側に Docker（および docker-compose）、または Podman（および podman-compose 等の互換ツール）の
-  いずれかがインストールされていること。
+- ホスト側に Podman（および podman-compose 等の互換ツール）がインストールされていること。
 - コンテナはインターネットに接続できる環境で稼働させること。
 
 ## 8. 今後の検討事項（オープン課題）
@@ -210,7 +206,6 @@ claude-code-container/
 - 複数プロジェクト・複数コンテナを運用する際の命名規則・管理方法。
 - 将来的な CI/CD 連携（API キー認証での非対話実行）や VSCode Dev Containers 対応の要否。
 - リソース（CPU/メモリ/ディスク）上限の設定要否。
-- Docker と Podman 間でのイメージ・ボリュームの相互運用性（移行時の互換性）の検証要否。
 - 自動 commit / push の粒度（1指示につき1コミットとするか、変更のまとまり単位とするか）の方針。
 - 自動 push 時にプルリクエスト作成やレビュー依頼まで自動化するか、push までに留めるかの範囲。
 - 自動承認モードにおける操作範囲の制限（実行禁止コマンドのブロックリスト等）の要否。

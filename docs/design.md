@@ -9,7 +9,7 @@
 ```mermaid
 flowchart TB
     subgraph Host["ホスト（クラウド VM 等）"]
-        Engine["コンテナエンジン\n(Docker / Podman)"]
+        Engine["コンテナエンジン\n(Podman rootless)"]
         subgraph Volumes["永続ボリューム"]
             V1["claude-config\n(~/.claude 等・認証情報)"]
             V2["workspace\n(/workspace・リポジトリ)"]
@@ -19,6 +19,7 @@ flowchart TB
             Tmux["tmux セッション"]
             CLI["claude コマンド (Claude Code CLI)"]
             Tools["Git / gh / Node.js / Python 等"]
+            Nested["podman（rootless）\nビルド用コンテナ"]
             Entrypoint["エントリポイント\n(常駐プロセス)"]
         end
         Engine --> Container
@@ -28,6 +29,7 @@ flowchart TB
     User["利用者端末"] -- SSH --> Host
     User -- "exec attach" --> Tmux
     Tmux --> CLI
+    CLI -- "build" --> Nested
     CLI -- "OAuth / API Key" --> Anthropic["Anthropic API / claude.ai"]
     CLI -- "clone / commit / push" --> Remote["リモートリポジトリ (GitHub 等)"]
 ```
@@ -44,18 +46,17 @@ flowchart TB
 ```
 claude-code-container/
 ├── Dockerfile                  # Claude Code CLI + 開発ツールを含むイメージ定義
-├── docker-compose.yml          # 常駐起動・ボリュームマウント定義（Docker既定値）
-├── docker-compose.podman.yml   # Podman固有の差分（SELinuxラベル等）を上書きする override
-├── .env.example                # コンテナエンジン選択・プロジェクト名等の環境変数サンプル
+├── compose.yml                 # 常駐起動・ボリュームマウント定義（Podman 専用）
+├── .env.example                # 対象リポジトリ・認証等の環境変数サンプル
 ├── scripts/
 │   ├── check-env.sh            # セットアップ前環境チェック
-│   ├── up.sh                    # 起動スクリプト（CONTAINER_ENGINE に応じてcompose起動コマンド・overrideファイルを選択）
+│   ├── up.sh                    # 起動スクリプト（podman compose / podman-compose を自動選択）
 │   ├── rebuild.sh               # コンテナ破棄→イメージのキャッシュ無し再ビルド→up.sh で再起動（ボリュームは保持）
 │   ├── entrypoint.sh            # コンテナ常駐用エントリポイント（初回clone・権限調整）
 │   ├── session-branch.sh        # 対話セッション開始検知→ブランチ作成
 │   ├── git-autocommit.sh        # 変更検知→commit/push 自動化
 │   └── lib/
-│       └── detect-engine.sh    # CONTAINER_ENGINE 未指定時のエンジン自動検出（check-env.sh/up.sh/attach.sh が共有）
+│       └── compose-cmd.sh      # podman compose / podman-compose の検出（up.sh/rebuild.sh/attach.sh が共有）
 ├── docs/
 │   ├── requirements.md
 │   ├── use-cases.md
@@ -74,6 +75,7 @@ claude-code-container/
 | ランタイム | Node.js 18 系（LTS）を `nodesource` 等から導入し、Claude Code CLI の動作要件を満たす |
 | Claude Code CLI | `npm install -g @anthropic-ai/claude-code` 相当。`ARG CLAUDE_CODE_VERSION` でビルド時に固定バージョン／最新版を選択可能にする。自動アップデートを可能にするため、`NPM_CONFIG_PREFIX=/home/dev/.npm-global` として `dev` ユーザー権限（sudo 無し）でインストールする |
 | 同梱ツール | `git`, `gh`（GitHub CLI）, `python3`/`pip`, `tmux`, `curl`, `ca-certificates` |
+| 入れ子のコンテナ | `podman`（rootless）, `uidmap`, `fuse-overlayfs`, `slirp4netns`, `crun`。コンテナ内でビルド用コンテナを動かすために使う（3.2 参照） |
 | 実行ユーザー | 非rootの一般ユーザー（例: `dev`, UID/GID をホストと合わせられるよう `ARG` で調整可） |
 | 作業ディレクトリ | `/workspace` |
 | ENTRYPOINT | `scripts/entrypoint.sh`（コンテナに `COPY` して実行権限を付与） |
@@ -88,7 +90,20 @@ claude-code-container/
 | `CONTAINER_UID` / `CONTAINER_GID` | 非root実行ユーザーの UID/GID（ホストとのファイル所有者整合） | `1000` |
 | `ANTHROPIC_API_KEY` | API キー認証を使う場合に設定（未設定時は OAuth ログインを想定） | 未設定 |
 
-## 4. compose 設計（docker-compose.yml）
+### 3.2 コンテナ内 podman（rootless）の設定
+
+コンテナ内の `dev` ユーザーが rootless podman でビルド用コンテナを動かせるよう、以下を設定する。
+
+| 項目 | 内容 | 理由 |
+| --- | --- | --- |
+| `/etc/subuid`・`/etc/subgid` | `dev:1:<UID-1>` と `dev:<UID+1>:<65535-UID>`（既定 UID 1000 なら `dev:1:999` と `dev:1001:64535`） | 外側のコンテナ（ホストの rootless podman）で使える uid は 0〜65535 のみのため、その範囲内で dev 自身の uid を除いて割り当てる。入れ子のコンテナ内では 0〜65534（nobody まで）が使える |
+| `storage.conf` | `driver = "overlay"`、`mount_program = "/usr/bin/fuse-overlayfs"` | コンテナ内ではカーネルの overlay を rootless で使えないため fuse-overlayfs を使う |
+| `containers.conf` | `cgroup_manager = "cgroupfs"`、`events_logger = "file"` | コンテナ内には systemd / journald が無いため |
+| `containers.conf` | `volumes = ["/proc:/proc"]`、`default_sysctls = []` | 入れ子では新しい proc のマウントや sysctl の設定が許されないための回避策。入れ子のコンテナからは外側コンテナのプロセスが見える |
+
+pull したイメージ等は `podman-storage` ボリューム（8章）に置く。
+
+## 4. compose 設計（compose.yml）
 
 ```yaml
 services:
@@ -106,22 +121,27 @@ services:
       - GIT_REPO_URL=${GIT_REPO_URL}
       - GIT_BASE_BRANCH=${GIT_BASE_BRANCH:-main}
       - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-true}
+    devices:
+      - /dev/fuse
+    security_opt:
+      - label=disable
     volumes:
-      - claude-config:/home/dev/.claude
-      - workspace:/workspace
-      - dotfiles:/home/dev/.dotfiles
-    command: ["scripts/entrypoint.sh"]
+      - claude-config:/home/dev/.claude:Z
+      - workspace:/workspace:Z
+      - dotfiles:/home/dev/.dotfiles:Z
+      - podman-storage:/home/dev/.local/share/containers:Z
 
 volumes:
   claude-config:
   workspace:
   dotfiles:
+  podman-storage:
 ```
 
-- Podman 利用時は `docker-compose.podman.yml` を `-f docker-compose.yml -f docker-compose.podman.yml`
-  で重ねて適用し、ボリュームマウントに `:Z` ラベルを付与する等の差分のみを吸収する。この重ね合わせは
-  利用者が手打ちで指定するのではなく、`scripts/up.sh`（5章）が `CONTAINER_ENGINE` の値を見て
-  自動的に付与する。取り扱い説明書のコマンド例も `scripts/up.sh` 経由に統一し、override 忘れを防ぐ。
+- コンテナエンジンは Podman（rootless）専用とする。ボリュームには SELinux ラベル `:Z` を付ける。
+- `devices: /dev/fuse` と `security_opt: label=disable` は、コンテナ内で rootless podman
+  （3.2 節）を動かすために必要。fuse-overlayfs が `/dev/fuse` を使い、SELinux のラベル分離が
+  入れ子の podman のマウントを拒否するため。その分、外側コンテナの隔離は弱まる。
 - プロジェクトを複数並行稼働させる場合は `-p <project-name>` を指定し、ボリューム名の衝突を防ぐ
   （5章参照）。`scripts/up.sh` は第一引数にプロジェクト名を受け取り、`-p` へ渡す。
 
@@ -129,23 +149,18 @@ volumes:
 
 ## 5. 起動スクリプト設計（scripts/up.sh）
 
-コンテナエンジンの選択（4.8）を実際にコマンドへ反映する起動スクリプト。利用者は Docker /
-Podman のいずれの場合も本スクリプト経由での起動を基本とする（取り扱い説明書 3.4・6章も本スクリプト
-呼び出しに統一する）。
+podman の compose コマンドでコンテナを起動するスクリプト。利用者は本スクリプト経由での起動を
+基本とする（取り扱い説明書 3.4・6章も本スクリプト呼び出しに統一する）。
 
 ### 5.1 処理内容
 
 ```
-1. .env（または環境変数）から CONTAINER_ENGINE を読み取る。未指定の場合は
-   scripts/lib/detect-engine.sh がインストール済みのエンジンを見て docker/podman を自動選択する
-   （既定 docker、docker が無く podman のみあれば podman）。
-2. CONTAINER_ENGINE=docker の場合:
-     docker compose [-p <project>] up -d
-3. CONTAINER_ENGINE=podman の場合:
-     podman compose（無ければ podman-compose）[-p <project>] \
-       -f docker-compose.yml -f docker-compose.podman.yml up -d
-   （override ファイルの重ね合わせは本スクリプトが必ず行い、利用者が個別に指定する必要はない）
-4. compose / podman-compose コマンド自体が見つからない場合は、check-env.sh を未実施であることを
+1. .env を読み込む。
+2. scripts/lib/compose-cmd.sh で compose コマンドを決める
+   （podman compose が使えればそれを、無ければ podman-compose）。
+3. 次のように起動する:
+     podman compose（または podman-compose）-f compose.yml [-p <project>] up -d --build --force-recreate
+4. podman compose / podman-compose が見つからない場合は、check-env.sh を未実施であることを
    案内して終了する。
 5. 第一引数が与えられた場合、プロジェクト名として `-p` に渡す（5章の複数プロジェクト運用に対応）。
 ```
@@ -161,13 +176,14 @@ Podman のいずれの場合も本スクリプト経由での起動を基本と�
 
 | # | 項目 | 区分 | 判定方法 | NG時の出力例・挙動 |
 | --- | --- | --- | --- | --- |
-| 1 | コンテナエンジンの有無・バージョン | 必須 | `docker --version` / `podman --version` の実行可否とバージョン比較 | インストール手順 URL を提示し中断 |
-| 2 | compose ツールの有無 | 必須 | `docker compose version` / `podman-compose --version` の実行可否 | 導入コマンド例を提示し中断 |
-| 3 | 必須コマンド | 必須 | `command -v git` 等の存在確認 | パッケージマネージャ別インストールコマンドを提示し中断 |
-| 4 | ディスク空き容量 | 必須 | `df` で作業ディレクトリのマウント先空き容量を取得し閾値と比較 | 必要空き容量と現状値を提示し中断 |
-| 5 | git ユーザー情報（user.name / user.email） | 任意（警告） | `git config --get user.name` / `user.email` の設定有無を確認 | 未設定の場合、設定コマンド例を提示して警告表示するが、セットアップは続行可能 |
-| 6 | メモリ | 任意（警告） | `/proc/meminfo` 等から総メモリ量を取得し閾値と比較 | 推奨メモリ量と現状値を警告表示するが、セットアップは続行可能 |
-| 7 | ネットワーク到達性 | 必須 | `curl -sSf https://api.anthropic.com` 等への到達確認 | プロキシ設定・ファイアウォール確認を促し中断 |
+| 1 | Podman の有無・バージョン | 必須 | `podman --version` の実行可否とバージョン比較（4.0 以上） | インストール手順 URL を提示し中断 |
+| 2 | compose ツールの有無 | 必須 | `podman compose version` / `podman-compose --version` の実行可否 | 導入コマンド例を提示し中断 |
+| 3 | `/dev/fuse` | 必須 | `/dev/fuse` がキャラクタデバイスとして存在するか | `modprobe fuse` を案内し中断（コンテナ内 podman に必要） |
+| 4 | 必須コマンド | 必須 | `command -v git` 等の存在確認 | パッケージマネージャ別インストールコマンドを提示し中断 |
+| 5 | ディスク空き容量 | 必須 | `df` で作業ディレクトリのマウント先空き容量を取得し閾値と比較 | 必要空き容量と現状値を提示し中断 |
+| 6 | git ユーザー情報（user.name / user.email） | 任意（警告） | `git config --get user.name` / `user.email` の設定有無を確認 | 未設定の場合、設定コマンド例を提示して警告表示するが、セットアップは続行可能 |
+| 7 | メモリ | 任意（警告） | `/proc/meminfo` 等から総メモリ量を取得し閾値と比較 | 推奨メモリ量と現状値を警告表示するが、セットアップは続行可能 |
+| 8 | ネットワーク到達性 | 必須 | `curl -sSf https://api.anthropic.com` 等への到達確認 | プロキシ設定・ファイアウォール確認を促し中断 |
 
 - 「必須」項目が1つでも NG の場合はセットアップを中断する（4.9 の「必須項目にNGがある場合は
   中断」に対応）。「任意（警告）」項目は NG でも処理を継続するが、警告として結果に残す。
@@ -179,8 +195,9 @@ Podman のいずれの場合も本スクリプト経由での起動を基本と�
 ### 6.2 出力フォーマット
 
 ```
-[OK] Docker: 24.0.7 (>= 20.10 required)
-[OK] docker compose: v2.21.0
+[OK] Podman: 4.9.4 (>= 4.0 required)
+[OK] podman-compose: podman-compose version 1.0.6
+[OK] /dev/fuse: 利用可能
 [OK] git: 2.39.2
 [NG] disk free space: 3.2GB (>= 10GB required)
       -> 対処: 不要なイメージ・ボリュームを削除するか、ディスクを拡張してください。
@@ -189,7 +206,7 @@ Podman のいずれの場合も本スクリプト経由での起動を基本と�
 
 - 終了コード: 全項目 OK の場合 `0`、いずれかが必須項目で NG の場合 `1`（呼び出し元の
   セットアップスクリプトはこれを見て処理を中断する）。
-- セットアップスクリプト（`docker compose up -d` 等を呼ぶラッパー、または README 記載手順）から
+- セットアップスクリプト（`scripts/up.sh`）から
   事前呼び出しされる想定とし、単体実行も可能にする。
 
 対応要件: 4.9
@@ -199,7 +216,9 @@ Podman のいずれの場合も本スクリプト経由での起動を基本と�
 コンテナ起動時（初回のみ実行される処理と、毎回実行される処理を分離する）。
 
 ```
-1. 毎回: ボリュームの所有者・パーミッションを非rootユーザーに合わせて調整（chown/chmod）
+1. 毎回: ボリュームの所有者・パーミッションを非rootユーザーに合わせて調整（chown/chmod）。
+   ただし podman-storage ボリュームは中身に subuid の uid が持ち主のファイルを含むため、
+   最上位ディレクトリだけを chown する（-R で chown すると入れ子の podman のストレージが壊れる）
 2. 毎回: dotfiles ボリューム（/home/dev/.dotfiles）配下の bash_history / gitconfig / ssh が
    未リンクであれば、~/.bash_history・~/.gitconfig・~/.ssh へのシンボリックリンクを作成する
    （既にリンク済みの場合はスキップし、8章のボリューム設計を実体化する）
@@ -225,6 +244,7 @@ Podman のいずれの場合も本スクリプト経由での起動を基本と�
 | `claude-config` | `/home/dev/.claude` | OAuth トークン、CLI 設定 | 再ログインが必要になる |
 | `workspace` | `/workspace` | clone 済みリポジトリ、作業ファイル | 未pushの変更が失われる |
 | `dotfiles` | `/home/dev/.dotfiles`（`~/.bash_history`, `~/.gitconfig`, `~/.ssh` をシンボリックリンク） | シェル履歴、Git設定、SSH鍵 | 認証設定・履歴が失われる |
+| `podman-storage` | `/home/dev/.local/share/containers` | コンテナ内 podman が pull したイメージ・作ったコンテナ | イメージの再 pull が必要になる |
 
 - ボリューム名はプロジェクト（compose の `-p` オプション）ごとに分離され、他プロジェクトと
   干渉しない（4.4, 4.5）。
@@ -233,22 +253,17 @@ Podman のいずれの場合も本スクリプト経由での起動を基本と�
 
 対応要件: 4.5, 5.1
 
-## 9. コンテナエンジン差異吸収設計（Docker / Podman）
+## 9. コンテナエンジン（Podman rootless 専用）
 
-| 差異点 | Docker | Podman（rootless） | 吸収方法 |
-| --- | --- | --- | --- |
-| ボリュームの SELinux ラベル | 不要 | `:Z`（専有）/`:z`（共有）が必要な場合あり | `docker-compose.podman.yml` の override でラベル付きマウントを定義 |
-| compose 実行コマンド | `docker compose` | `podman-compose` または `podman compose` | `scripts/up.sh`（5章）がコマンドの存在確認をして自動選択 |
-| デーモンの有無 | dockerd（root権限が必要な場合あり） | デーモンレス・rootless | Podman選択時は `sudo` 不要な手順のみを案内 |
-| ネットワークモード | bridge がデフォルト | slirp4netns 等 | 明示的なポート公開が必要な場合のみ compose 側で調整 |
+コンテナエンジンは Podman（rootless）専用とし、Docker には対応しない。
 
-コンテナエンジンの選択は環境変数 `CONTAINER_ENGINE=docker|podman` で行う。未指定時は
-`scripts/lib/detect-engine.sh` がホストに `docker` コマンドがあれば `docker` を、無く `podman`
-コマンドのみがあれば `podman` を自動選択する（両方無い場合は従来通り `docker`）。これにより
-Podman のみをインストールしたホストで `CONTAINER_ENGINE` の明示指定を忘れても
-`scripts/check-env.sh` が Docker 不在を理由に NG にすることを防ぐ。`scripts/up.sh`（5章）・
-`scripts/check-env.sh`（6章）・`scripts/attach.sh` はいずれもこの共通ロジックで確定した値を見て
-使用する compose コマンド・override ファイルを切り替える。
+| 項目 | 内容 |
+| --- | --- |
+| ボリュームの SELinux ラベル | `compose.yml` のボリュームに `:Z`（専有）を付ける |
+| compose 実行コマンド | `podman compose` または `podman-compose`。`scripts/lib/compose-cmd.sh` が存在確認をして自動選択し、`scripts/up.sh`・`scripts/rebuild.sh`・`scripts/attach.sh` が共有する |
+| デーモンの有無 | デーモンレス・rootless。`sudo` 不要な手順のみを案内する |
+| ネットワークモード | slirp4netns 等。明示的なポート公開が必要な場合のみ compose 側で調整 |
+| コンテナ内 podman | `/dev/fuse` の受け渡しと `label=disable` が必要（4章・3.2 節） |
 
 対応要件: 4.8, 5.1, 5.4
 
@@ -332,7 +347,7 @@ sequenceDiagram
 
 ## 13. ログ・運用設計
 
-- コンテナの標準出力ログは `docker compose logs -f` / `podman-compose logs -f` で確認できる
+- コンテナの標準出力ログは `podman-compose -f compose.yml logs -f` で確認できる
   構成とする。
 - エントリポイント・自動commit/pushスクリプトは、処理内容（clone実行有無、commit hash、
   push成否）を標準出力へ出力し、ログとして残す。
@@ -351,7 +366,6 @@ sequenceDiagram
 | セッション開始・終了の検知方式 | CLI提供のフックを優先、無い場合は起動ラッパー（`session-branch.sh`）で代替（11.1） |
 
 上記以外の未決事項（SSHアクセス時の鍵配布方式、複数プロジェクトの命名規則の標準化、
-CI/CD連携要否、リソース上限設定要否、Docker/Podman間のボリューム相互運用性）は、
-実装着手前に別途決定するか、初期リリースでは対象外として扱う。
+CI/CD連携要否、リソース上限設定要否）は、実装着手前に別途決定するか、初期リリースでは対象外として扱う。
 
 対応要件: 8章

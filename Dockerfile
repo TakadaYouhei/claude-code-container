@@ -56,12 +56,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # 外側のコンテナで使える uid/gid は 0〜65535 だけなので、その範囲内で割り当てる。
-# dev 自身の uid/gid と重ならないよう、その次の番号から 65535 までを使う
-# （CONTAINER_UID/GID を変えても重ならないよう ARG から計算する）。
-RUN uid_start=$((CONTAINER_UID + 1)) \
-    && gid_start=$((CONTAINER_GID + 1)) \
-    && echo "dev:${uid_start}:$((65536 - uid_start))" > /etc/subuid \
-    && echo "dev:${gid_start}:$((65536 - gid_start))" > /etc/subgid
+# dev 自身の uid/gid（既定 1000）を除いた 1〜999 と 1001〜65535 を使う（公式 podman イメージと同じ割り当て方）。
+# これで入れ子のコンテナ内で 0〜65534（nobody まで）の uid が使える。
+# CONTAINER_UID/GID を変えても dev 自身と重ならないよう ARG から計算する。
+RUN printf 'dev:1:%d\ndev:%d:%d\n' \
+        "$((CONTAINER_UID - 1))" "$((CONTAINER_UID + 1))" "$((65535 - CONTAINER_UID))" > /etc/subuid \
+    && printf 'dev:1:%d\ndev:%d:%d\n' \
+        "$((CONTAINER_GID - 1))" "$((CONTAINER_GID + 1))" "$((65535 - CONTAINER_GID))" > /etc/subgid
 
 # dev ユーザー用の podman 設定（入れ子のコンテナ内では systemd/journald が無いため cgroupfs・file を使う）
 RUN mkdir -p /home/dev/.config/containers /home/dev/.local/share/containers \

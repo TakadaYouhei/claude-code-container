@@ -9,6 +9,7 @@ CLAUDE_HOME="/home/dev/.claude"
 DOTFILES_DIR="/home/dev/.dotfiles"
 DEFAULT_SETTINGS="/opt/claude-container/claude-settings.default.json"
 REPO_MARKER="${WORKSPACE_DIR}/.repo-initialized"
+PODMAN_STORAGE_DIR="/home/dev/.local/share/containers"
 
 # root で起動された場合は、ボリュームの所有者を dev ユーザーへ調整したうえで
 # dev ユーザーへ権限を落として以降の処理を継続する（5.1: 非root実行）。
@@ -17,9 +18,13 @@ if [ "$(id -u)" = "0" ]; then
   mkdir -p "${WORKSPACE_DIR}" "${CLAUDE_HOME}" "${DOTFILES_DIR}"
   chown -R dev:dev "${WORKSPACE_DIR}" "${CLAUDE_HOME}" "${DOTFILES_DIR}"
   chmod 700 "${DOTFILES_DIR}" "${CLAUDE_HOME}"
+  # 入れ子の podman のストレージ（ボリューム）。中身は subuid で割り当てた uid が持ち主のファイルを
+  # 含むため、-R で chown すると壊れる。最上位ディレクトリの所有者だけを調整する。
+  mkdir -p "${PODMAN_STORAGE_DIR}"
+  chown dev:dev /home/dev/.local /home/dev/.local/share "${PODMAN_STORAGE_DIR}"
   echo "[entrypoint] dev ユーザーへ切り替えて起動処理を継続します..."
   # -l（ログインシェル）は環境変数をリセットしてしまうため使わない。
-  # GIT_REPO_URL 等（docker-compose の environment で設定）を dev ユーザーへ引き継ぐ。
+  # GIT_REPO_URL 等（compose.yml の environment で設定）を dev ユーザーへ引き継ぐ。
   exec su -s /bin/bash dev -c "/home/dev/scripts/entrypoint.sh"
 fi
 
