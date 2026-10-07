@@ -53,7 +53,11 @@ RUN groupadd -g "${CONTAINER_GID}" dev \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         podman uidmap fuse-overlayfs slirp4netns crun \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # Debian の uidmap は newuidmap/newgidmap に setuid ではなくファイルケーパビリティを付けるが、
+    # rootless podman でビルド・実行するイメージではこれが効かず、uid_map への書き込みが
+    # Operation not permitted になる。公式 podman イメージと同様に setuid root にする。
+    && chmod 4755 /usr/bin/newuidmap /usr/bin/newgidmap
 
 # 外側のコンテナで使える uid/gid は 0〜65535 だけなので、その範囲内で割り当てる。
 # dev 自身の uid/gid（既定 1000）を除いた 1〜999 と 1001〜65535 を使う（公式 podman イメージと同じ割り当て方）。
