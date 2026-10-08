@@ -52,12 +52,16 @@ RUN groupadd -g "${CONTAINER_GID}" dev \
 # コンテナ内でビルド用コンテナを動かすための podman 本体と、rootless で動かすための部品
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        podman uidmap fuse-overlayfs slirp4netns crun \
+        podman uidmap fuse-overlayfs slirp4netns crun libcap2-bin \
     && rm -rf /var/lib/apt/lists/* \
-    # Debian の uidmap は newuidmap/newgidmap に setuid ではなくファイルケーパビリティを付けるが、
-    # rootless podman でビルド・実行するイメージではこれが効かず、uid_map への書き込みが
-    # Operation not permitted になる。公式 podman イメージと同様に setuid root にする。
-    && chmod 4755 /usr/bin/newuidmap /usr/bin/newgidmap
+    # newuidmap/newgidmap は setuid root ではなく、必要な権限だけをファイルケーパビリティで与える。
+    # setuid root だと実行ユーザーが root になり、dev が作った user namespace の「持ち主」では
+    # なくなる。するとカーネルは uid_map の書き込みに CAP_SYS_ADMIN を要求するが、外側の
+    # コンテナには CAP_SYS_ADMIN が無いため Operation not permitted になる。
+    # ファイルケーパビリティなら dev のまま CAP_SETUID/CAP_SETGID だけを持つので書き込める。
+    && chmod 0755 /usr/bin/newuidmap /usr/bin/newgidmap \
+    && setcap cap_setuid=ep /usr/bin/newuidmap \
+    && setcap cap_setgid=ep /usr/bin/newgidmap
 
 # 外側のコンテナで使える uid/gid は 0〜65535 だけなので、その範囲内で割り当てる。
 # dev 自身の uid/gid（既定 1000）を除いた 1〜999 と 1001〜65535 を使う（公式 podman イメージと同じ割り当て方）。
