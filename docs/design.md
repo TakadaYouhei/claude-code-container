@@ -99,7 +99,8 @@ claude-code-container/
 | `/etc/subuid`・`/etc/subgid` | `dev:1:<UID-1>` と `dev:<UID+1>:<65535-UID>`（既定 UID 1000 なら `dev:1:999` と `dev:1001:64535`） | 外側のコンテナ（ホストの rootless podman）で使える uid は 0〜65535 のみのため、その範囲内で dev 自身の uid を除いて割り当てる。入れ子のコンテナ内では 0〜65534（nobody まで）が使える |
 | `storage.conf` | `driver = "overlay"`、`mount_program = "/usr/bin/fuse-overlayfs"` | コンテナ内ではカーネルの overlay を rootless で使えないため fuse-overlayfs を使う |
 | `containers.conf` | `cgroup_manager = "cgroupfs"`、`events_logger = "file"` | コンテナ内には systemd / journald が無いため |
-| `containers.conf` | `default_sysctls = []` | 入れ子では sysctl の設定が許されないための回避策。なお、入れ子のコンテナで proc をマウントできない場合の回避策として `volumes = ["/proc:/proc"]` があるが、入れ子のコンテナから外側コンテナのプロセス（環境変数や認証情報）が見えてしまうため使わない |
+| `containers.conf` | `default_sysctls = []` | 入れ子では sysctl の設定が許されないための回避策 |
+| `containers.conf` | `volumes = ["/proc:/proc"]` | 入れ子のコンテナでは proc をマウントできないための回避策。入れ子のコンテナから外側コンテナのプロセス（環境変数や認証情報）が見えてしまうため、信頼できるイメージだけを動かす |
 
 pull したイメージ等は `podman-storage` ボリューム（8章）に置く。
 

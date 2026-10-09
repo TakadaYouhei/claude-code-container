@@ -248,7 +248,7 @@ podman-compose -f compose.yml logs -f
 | `./scripts/up.sh` でコンテナが起動せず、SELinux の型 `container_engine_t` に関するエラーが出る | ホストの SELinux ポリシー（container-selinux）が古く、`container_engine_t` が無い | `sudo dnf update container-selinux` で更新する。更新できない場合は `compose.yml` の `label=type:container_engine_t` を `label=disable` に置き換える（SELinux による閉じ込めが外れる） |
 | コンテナ内の `podman` が `Permission denied` で失敗し、ホストの `sudo ausearch -m avc -ts recent` に拒否記録がある | SELinux のポリシーで許されていない操作がある | 拒否記録の内容を確認する。切り分けとして一時的に `label=disable` で起動して動くか確かめる |
 | コンテナ内の `podman` が `newuidmap: write to uid_map failed: Operation not permitted` で失敗する | `newuidmap`/`newgidmap` にファイルケーパビリティが付いていない、または setuid root になっている（外側コンテナに CAP_SYS_ADMIN が無いため、setuid root では書き込めない） | `./scripts/rebuild.sh` でイメージを作り直す。コンテナ内で `getcap /usr/bin/newuidmap` が `cap_setuid=ep` を表示し、`ls -l` が `-rwxr-xr-x`（`s` 無し）なら対応済み |
-| コンテナ内の `podman run` が `mount proc` 等で `Operation not permitted` になる | 入れ子のコンテナで proc をマウントできない | 外側コンテナの `/proc` を入れ子に渡す回避策（`containers.conf` の `volumes = ["/proc:/proc"]`）は、入れ子から外側の認証情報が見えるため既定では使っていない。設計書 3.2 節を参照 |
+| コンテナ内の `podman run` が `mount proc` 等で `Operation not permitted` になる | 入れ子のコンテナで proc をマウントできない | `containers.conf` の `volumes = ["/proc:/proc"]` で外側コンテナの `/proc` を入れ子に渡している。古いイメージなら `./scripts/rebuild.sh` で作り直す。この設定により入れ子から外側の認証情報が見えるため、信頼できるイメージだけを動かす。設計書 3.2 節を参照 |
 | コンテナ内の `podman pull` が `insufficient UIDs or GIDs` で失敗する | イメージ内に 65535 を超える uid が持ち主のファイルがある | 外側コンテナで使える uid は 0〜65535 のため、そのイメージは使えない。別のイメージを使う |
 | コンテナ内の `podman pull ubuntu` が short-name エラーになる | 短い名前の解決先を設定していない | `docker.io/library/ubuntu` のように完全な名前で指定する |
 | ホスト再起動後にコンテナが起動しない | 自動起動が設定されていない | `./scripts/up.sh` を手動実行する |

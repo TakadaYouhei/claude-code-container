@@ -73,6 +73,7 @@ RUN printf 'dev:1:%d\ndev:%d:%d\n' \
         "$((CONTAINER_GID - 1))" "$((CONTAINER_GID + 1))" "$((65535 - CONTAINER_GID))" > /etc/subgid
 
 # dev ユーザー用の podman 設定（入れ子のコンテナ内では systemd/journald が無いため cgroupfs・file を使う）
+# 入れ子のコンテナでは proc をマウントできないため、外側コンテナの /proc を渡す（入れ子から外側のプロセスが見える）
 RUN mkdir -p /home/dev/.config/containers /home/dev/.local/share/containers \
     && printf '%s\n' \
         '[storage]' \
@@ -83,6 +84,7 @@ RUN mkdir -p /home/dev/.config/containers /home/dev/.local/share/containers \
     && printf '%s\n' \
         '[containers]' \
         'default_sysctls = []' \
+        'volumes = ["/proc:/proc"]' \
         '[engine]' \
         'cgroup_manager = "cgroupfs"' \
         'events_logger = "file"' \
