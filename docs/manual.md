@@ -15,7 +15,7 @@
 | --- | --- |
 | ホスト | インターネットに接続できる Linux サーバー（クラウド VM 等） |
 | コンテナエンジン | Podman 4.0 以上（rootless）と、`podman compose` または `podman-compose`。Docker には対応しない |
-| `/dev/fuse` | コンテナ内で podman（ビルド用コンテナ）を動かすのに必要（fuse カーネルモジュール） |
+| `/dev/fuse`・`/dev/net/tun` | コンテナ内で podman（ビルド用コンテナ）を動かすのに必要（fuse・tun カーネルモジュール） |
 | Claude.ai アカウント | Claude Code を利用可能なプラン（Pro/Max 等）。または `ANTHROPIC_API_KEY` |
 | Git | 作業対象のリポジトリへアクセスできる認証情報（GitHub PAT または SSH 鍵） |
 
@@ -72,7 +72,7 @@ cp .env.example .env
 
 - Podman がインストール済みで、動作要件（4.0 以上）を満たすバージョンか（必須）
 - `podman compose` / `podman-compose` が利用可能か（必須）
-- `/dev/fuse` があるか（必須・コンテナ内で podman を動かすのに使う）
+- `/dev/fuse`・`/dev/net/tun` があるか（必須・コンテナ内で podman を動かすのに使う）
 - `git` など必須コマンドが PATH 上に存在するか（必須）
 - ディスク空き容量が最低要件を満たしているか（必須）
 - git の `user.name` / `user.email` が設定済みか（任意・未設定でも警告表示のみでセットアップは続行できる）
@@ -242,6 +242,8 @@ podman-compose -f compose.yml logs -f
 | `claude` コマンドで再ログインを求められる | 認証情報用ボリュームがマウントされていない、別ボリュームでコンテナを再作成した | ボリューム設定を確認し、認証情報ディレクトリ（`~/.claude` 等）が永続化されているか確認する |
 | `git push` が失敗する | 認証情報（PAT/SSH 鍵）の期限切れ、ブランチの競合、ネットワーク断 | エラー内容を確認し、認証情報を更新するかコンフリクトを解消したうえで再度指示を送る |
 | Podman でボリュームの権限エラーが出る | SELinux ラベルが付与されていない | `compose.yml` を使わずに `podman run` 等で直接起動していないか確認し、`./scripts/up.sh` 経由で起動する |
+| コンテナ内の `podman run` が `slirp4netns failed: open("/dev/net/tun"): No such file or directory` で失敗する | 外側コンテナに `/dev/net/tun` が渡されていない（古い定義で起動したコンテナ） | `./scripts/up.sh` でコンテナを作り直す。ホストに `/dev/net/tun` が無ければ `sudo modprobe tun` を実行する |
+| コンテナ内の `podman run` で `failed to set net.ipv6.conf.default.accept_dad sysctl` という WARN が出る | 入れ子のコンテナでは sysctl を書き換えられない | 警告のみで動作に影響はないため無視してよい |
 | コンテナ内の `podman` が `fuse: device not found` 等で失敗する | ホストに `/dev/fuse` が無い、または古い定義で起動したコンテナを使っている | ホストで `sudo modprobe fuse` を実行し、`./scripts/up.sh` でコンテナを作り直す |
 | `./scripts/up.sh` でコンテナが起動せず、SELinux の型 `container_engine_t` に関するエラーが出る | ホストの SELinux ポリシー（container-selinux）が古く、`container_engine_t` が無い | `sudo dnf update container-selinux` で更新する。更新できない場合は `compose.yml` の `label=type:container_engine_t` を `label=disable` に置き換える（SELinux による閉じ込めが外れる） |
 | コンテナ内の `podman` が `Permission denied` で失敗し、ホストの `sudo ausearch -m avc -ts recent` に拒否記録がある | SELinux のポリシーで許されていない操作がある | 拒否記録の内容を確認する。切り分けとして一時的に `label=disable` で起動して動くか確かめる |

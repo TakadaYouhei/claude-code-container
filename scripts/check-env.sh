@@ -82,14 +82,21 @@ check_compose() {
   fi
 }
 
-# 3. /dev/fuse（コンテナ内の podman が fuse-overlayfs で使う）
-check_fuse() {
-  if [ -c /dev/fuse ]; then
-    ok "/dev/fuse: 利用可能"
-  else
-    ng "/dev/fuse: 見つかりません" \
-       "fuse カーネルモジュールを読み込んでください（例: 'sudo modprobe fuse'）。コンテナ内で podman を動かすのに必要です。"
-  fi
+# 3. /dev/fuse・/dev/net/tun（コンテナ内の podman が fuse-overlayfs・slirp4netns で使う）
+check_devices() {
+  local dev mod
+  for dev in /dev/fuse /dev/net/tun; do
+    case "${dev}" in
+      /dev/fuse) mod=fuse ;;
+      /dev/net/tun) mod=tun ;;
+    esac
+    if [ -c "${dev}" ]; then
+      ok "${dev}: 利用可能"
+    else
+      ng "${dev}: 見つかりません" \
+         "${mod} カーネルモジュールを読み込んでください（例: 'sudo modprobe ${mod}'）。コンテナ内で podman を動かすのに必要です。"
+    fi
+  done
 }
 
 # 4. 必須コマンド
@@ -172,7 +179,7 @@ check_network() {
 echo "=== claude-code-container 環境チェック ==="
 check_engine
 check_compose
-check_fuse
+check_devices
 check_required_commands
 check_disk_space
 check_git_identity
