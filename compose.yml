@@ -17,13 +17,15 @@ services:
       - GIT_BASE_BRANCH=${GIT_BASE_BRANCH:-main}
       - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-true}
     # コンテナ内で rootless podman（ビルド用コンテナ）を動かすための設定。
-    # fuse-overlayfs に /dev/fuse が必要。
+    # fuse-overlayfs に /dev/fuse が、入れ子のコンテナのネットワーク（slirp4netns / pasta）に
+    # /dev/net/tun が必要。
     # SELinux の既定の型（container_t）では入れ子の podman のマウントが拒否されるため、
     # container-selinux が「コンテナ内でコンテナエンジンを動かす」用に用意している
     # container_engine_t を使う。label=disable と違い、SELinux による閉じ込めは残る。
     # ホストのポリシーにこの型が無い場合は、label=disable に置き換える（隔離は弱まる）。
     devices:
       - /dev/fuse
+      - /dev/net/tun
     security_opt:
       - label=type:container_engine_t
     # SELinux ラベル（:Z）付きでマウントする。

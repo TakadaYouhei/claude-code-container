@@ -123,6 +123,7 @@ services:
       - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-true}
     devices:
       - /dev/fuse
+      - /dev/net/tun
     security_opt:
       - label=type:container_engine_t
     volumes:
@@ -139,8 +140,9 @@ volumes:
 ```
 
 - コンテナエンジンは Podman（rootless）専用とする。ボリュームには SELinux ラベル `:Z` を付ける。
-- `devices: /dev/fuse` と `security_opt: label=type:container_engine_t` は、コンテナ内で
-  rootless podman（3.2 節）を動かすために必要。fuse-overlayfs が `/dev/fuse` を使い、SELinux の
+- `devices: /dev/fuse`・`/dev/net/tun` と `security_opt: label=type:container_engine_t` は、コンテナ内で
+  rootless podman（3.2 節）を動かすために必要。fuse-overlayfs が `/dev/fuse` を、入れ子のコンテナの
+  ネットワーク（slirp4netns）が `/dev/net/tun` を使い、SELinux の
   既定の型（`container_t`）では入れ子の podman のマウント（fuse・proc・sysfs 等）が拒否されるため。
   `container_engine_t` は container-selinux が「コンテナ内でコンテナエンジンを動かす」用に用意している
   型で、マウントは許しつつ SELinux による閉じ込め（MCS による他コンテナとの分離など）は残る。
@@ -183,7 +185,7 @@ podman の compose コマンドでコンテナを起動するスクリプト。�
 | --- | --- | --- | --- | --- |
 | 1 | Podman の有無・バージョン | 必須 | `podman --version` の実行可否とバージョン比較（4.0 以上） | インストール手順 URL を提示し中断 |
 | 2 | compose ツールの有無 | 必須 | `podman compose version` / `podman-compose --version` の実行可否 | 導入コマンド例を提示し中断 |
-| 3 | `/dev/fuse` | 必須 | `/dev/fuse` がキャラクタデバイスとして存在するか | `modprobe fuse` を案内し中断（コンテナ内 podman に必要） |
+| 3 | `/dev/fuse`・`/dev/net/tun` | 必須 | それぞれがキャラクタデバイスとして存在するか | `modprobe fuse` / `modprobe tun` を案内し中断（コンテナ内 podman に必要） |
 | 4 | 必須コマンド | 必須 | `command -v git` 等の存在確認 | パッケージマネージャ別インストールコマンドを提示し中断 |
 | 5 | ディスク空き容量 | 必須 | `df` で作業ディレクトリのマウント先空き容量を取得し閾値と比較 | 必要空き容量と現状値を提示し中断 |
 | 6 | git ユーザー情報（user.name / user.email） | 任意（警告） | `git config --get user.name` / `user.email` の設定有無を確認 | 未設定の場合、設定コマンド例を提示して警告表示するが、セットアップは続行可能 |
@@ -203,6 +205,7 @@ podman の compose コマンドでコンテナを起動するスクリプト。�
 [OK] Podman: 4.9.4 (>= 4.0 required)
 [OK] podman-compose: podman-compose version 1.0.6
 [OK] /dev/fuse: 利用可能
+[OK] /dev/net/tun: 利用可能
 [OK] git: 2.39.2
 [NG] disk free space: 3.2GB (>= 10GB required)
       -> 対処: 不要なイメージ・ボリュームを削除するか、ディスクを拡張してください。
@@ -268,7 +271,7 @@ podman の compose コマンドでコンテナを起動するスクリプト。�
 | compose 実行コマンド | `podman compose` または `podman-compose`。`scripts/lib/compose-cmd.sh` が存在確認をして自動選択し、`scripts/up.sh`・`scripts/rebuild.sh`・`scripts/attach.sh` が共有する |
 | デーモンの有無 | デーモンレス・rootless。`sudo` 不要な手順のみを案内する |
 | ネットワークモード | slirp4netns 等。明示的なポート公開が必要な場合のみ compose 側で調整 |
-| コンテナ内 podman | `/dev/fuse` の受け渡しと `label=type:container_engine_t` が必要（4章・3.2 節） |
+| コンテナ内 podman | `/dev/fuse`・`/dev/net/tun` の受け渡しと `label=type:container_engine_t` が必要（4章・3.2 節） |
 
 対応要件: 4.8, 5.1, 5.4
 
