@@ -36,7 +36,8 @@ flowchart TB
 
 - 1コンテナ＝1プロジェクトを原則とし、同一ホスト上で複数コンテナを並行稼働できる（3.1, 4.4）。
 - コンテナはフォアグラウンドプロセス（エントリポイント）により常駐し、`restart: unless-stopped`
-  相当のポリシーで再起動に耐える（4.4, 5.2）。
+  相当のポリシーで再起動に耐える（4.4, 5.2）。PID 1 には init（`init: true`）を置き、
+  コンテナ内で親を失ったプロセスを回収してゾンビを残さない。
 - 認証情報・作業データはホスト側ボリュームに永続化し、コンテナのライフサイクルから切り離す（4.5）。
 
 対応要件: 3.1, 4.3, 4.4, 4.7, 4.11
@@ -115,6 +116,7 @@ services:
         CONTAINER_UID: ${CONTAINER_UID:-1000}
         CONTAINER_GID: ${CONTAINER_GID:-1000}
     restart: unless-stopped
+    init: true
     tty: true
     stdin_open: true
     environment:
