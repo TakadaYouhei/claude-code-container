@@ -36,8 +36,9 @@ flowchart TB
 
 - 1コンテナ＝1プロジェクトを原則とし、同一ホスト上で複数コンテナを並行稼働できる（3.1, 4.4）。
 - コンテナはフォアグラウンドプロセス（エントリポイント）により常駐し、`restart: unless-stopped`
-  相当のポリシーで再起動に耐える（4.4, 5.2）。PID 1 には init（`init: true`）を置き、
-  コンテナ内で親を失ったプロセスを回収してゾンビを残さない。
+  相当のポリシーで再起動に耐える（4.4, 5.2）。PID 1 には init（イメージに同梱した `tini`）を置き、
+  コンテナ内で親を失ったプロセスを回収してゾンビを残さない。compose の `init: true` はホストの
+  catatonit（`bin_t`）を実行するため、`container_engine_t` の SELinux ポリシーで拒否されて使えない。
 - 認証情報・作業データはホスト側ボリュームに永続化し、コンテナのライフサイクルから切り離す（4.5）。
 
 対応要件: 3.1, 4.3, 4.4, 4.7, 4.11
@@ -79,7 +80,7 @@ claude-code-container/
 | 入れ子のコンテナ | `podman`（rootless）, `uidmap`, `fuse-overlayfs`, `slirp4netns`, `crun`。コンテナ内でビルド用コンテナを動かすために使う（3.2 参照） |
 | 実行ユーザー | 非rootの一般ユーザー（例: `dev`, UID/GID をホストと合わせられるよう `ARG` で調整可） |
 | 作業ディレクトリ | `/workspace` |
-| ENTRYPOINT | `scripts/entrypoint.sh`（コンテナに `COPY` して実行権限を付与） |
+| ENTRYPOINT | `tini -- scripts/entrypoint.sh`（tini が PID 1。entrypoint はコンテナに `COPY` して実行権限を付与） |
 
 対応要件: 4.1, 4.2, 4.6, 5.1
 
@@ -116,7 +117,6 @@ services:
         CONTAINER_UID: ${CONTAINER_UID:-1000}
         CONTAINER_GID: ${CONTAINER_GID:-1000}
     restart: unless-stopped
-    init: true
     tty: true
     stdin_open: true
     environment:

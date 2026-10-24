@@ -24,6 +24,7 @@ RUN apt-get update \
         python3-venv \
         jq \
         openssh-client \
+        tini \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -120,4 +121,8 @@ WORKDIR /workspace
 
 # entrypoint.sh はコンテナ起動直後は root で実行し、ボリュームの所有者調整（chown）を行った後、
 # dev ユーザーへ権限を落として（su）以降の全処理（tmux・claude 等）を非root実行する（5.1）。
-ENTRYPOINT ["/home/dev/scripts/entrypoint.sh"]
+# PID 1 には tini を置き、親を失ったプロセスを回収してゾンビを残さない。
+# エントリポイントは最後に tail -f /dev/null を exec するが、tail は子プロセスを回収しない。
+# compose の init: true（ホストの catatonit）は container_engine_t の SELinux ポリシーで実行を拒否されるため、
+# イメージ内の tini を使う（イメージ内のファイルはコンテナ用のラベルになり、実行できる）。
+ENTRYPOINT ["/usr/bin/tini", "--", "/home/dev/scripts/entrypoint.sh"]

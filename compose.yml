@@ -9,9 +9,10 @@ services:
         CONTAINER_GID: ${CONTAINER_GID:-1000}
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     restart: unless-stopped
-    # PID 1 に init（podman では catatonit）を置き、親を失ったプロセスを回収してゾンビを残さない。
-    # エントリポイントは最後に tail -f /dev/null を exec するが、tail は子プロセスを回収しない。
-    init: true
+    # PID 1 の init（ゾンビ回収）はイメージに同梱した tini を使う（Dockerfile の ENTRYPOINT）。
+    # init: true（podman --init）はホストの catatonit（SELinux ラベル bin_t）を /run/podman-init として
+    # マウントして実行するが、container_engine_t からは bin_t を entrypoint にできず
+    # 「exec container process `/run/podman-init`: Permission denied」で起動に失敗するため使わない。
     tty: true
     stdin_open: true
     environment:
